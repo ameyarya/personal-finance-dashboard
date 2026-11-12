@@ -1,0 +1,12 @@
+# your figures and bank key never go into git
+data/
+data.json
+secrets.json
+*.plist
+!deploy/*.template
+
+.venv/
+__pycache__/
+.pytest_cache/
+test-results/
+.DS_Store

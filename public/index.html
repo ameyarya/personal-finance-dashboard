@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Household Money</title>
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Sora:wght@500;600&display=swap">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="shell"><div class="app">
+  <aside class="side">
+    <div class="brand"><span class="logo"><svg class="ic" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7M6 10v10h12V10M10 20v-5h4v5"/></svg></span><div><b id="title">Our household</b><small>Household money</small></div></div>
+    <nav id="nav" aria-label="Pages"></nav>
+    <div class="safe" id="safe"></div>
+  </aside>
+  <div class="main">
+    <header class="top">
+      <div><div class="date" id="date"></div><h1 id="greet">Household money</h1><p id="lede"></p></div>
+      <div class="tools">
+        <div class="monthnav"><button class="btn icon" id="prev" data-act="prev" aria-label="Previous month">‹</button><span id="mlabel"></span><button class="btn icon" id="next" data-act="next" aria-label="Next month">›</button></div>
+        <button class="btn icon" id="btn-theme" data-act="theme" aria-label="Switch theme"></button>
+        <button class="btn icon" id="btn-settings" data-act="settings" aria-label="Settings"></button>
+        <button class="btn primary" id="btn-add" data-act="add-tx">Add payment</button>
+      </div>
+    </header>
+    <div id="banner" hidden></div>
+    <main id="view"></main>
+  </div>
+</div></div>
+<dialog id="dlg"></dialog>
+<input type="file" id="csv-file" accept=".csv,text/csv,text/plain" hidden>
+<div id="toast" role="status" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>

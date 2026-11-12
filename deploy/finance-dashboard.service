@@ -1,0 +1,11 @@
+# Replace /PATH/TO/personal-finance-dashboard with where you cloned this repository.
+[Unit]
+Description=Personal Finance Dashboard
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 -u /PATH/TO/personal-finance-dashboard/server.py
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

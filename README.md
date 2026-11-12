@@ -1,0 +1,140 @@
+# Personal Finance Dashboard
+
+A household money page you run on your own computer and open from any device on your home
+network. One Python file, no dependencies, no accounts, no cloud. Your figures stay in a single
+JSON file on your machine.
+
+```bash
+git clone https://github.com/ameyarya/personal-finance-dashboard.git
+cd personal-finance-dashboard
+python3 server.py
+```
+
+Open <http://localhost:8770/>. From a phone or another computer on the same Wi-Fi, open
+<http://finances.local:8770/>.
+
+It starts with made-up example figures so you can look around. Press **Clear examples** on the
+page when you are ready to enter your own.
+
+## What it does
+
+- **Overview.** Joint balance, what is safe to spend after bills, and a forecast to the end of
+  the month that marks each payday and bill.
+- **Payments.** Add, edit, search, filter, delete with undo, import a bank statement, export.
+- **Bills.** Regular bills and paydays. Tick them off as they happen.
+- **Budgets.** A monthly limit per category, with a marker for where spending should be today.
+- **Pots.** Savings goals you move money into.
+- **Insights.** Spending by day, needs against wants against savings, categories over six months.
+- **Household.** Who spent what.
+- **Accounts.** Optional bank link, statement import, backup.
+
+Light and dark themes. Works on a phone. Ten currencies.
+
+## Getting your real figures in
+
+There are three ways. You can mix them.
+
+| Way | Effort | How current |
+|---|---|---|
+| Type payments in | Per payment | As current as you are |
+| Import a CSV statement from your bank's website | A minute, whenever you like | As of the export |
+| Link your bank through SimpleFIN Bridge | Once | About once a day |
+
+**CSV import.** Download a statement as CSV from your bank, then use *Payments → Import CSV*. The
+columns are detected from their names (date, description, and either one amount column or separate
+money-in and money-out columns). You see a preview before anything is saved. Importing the same
+file twice adds nothing. Categories are guessed from the description, and when you correct one you
+can tick a box to remember it.
+
+**Bank link.** No bank offers households a free live feed, so this uses
+[SimpleFIN Bridge](https://beta-bridge.simplefin.org/), a paid read-only service covering US and
+Canadian banks. You link your banks on their site, create a *setup token*, and paste it under
+*Accounts → Bank connection*. The server swaps it once for an access key and keeps that key in
+`data/secrets.json`, readable only by you. It never reaches the browser. Balances and payments are
+then fetched about once a day (the bridge allows roughly 24 requests a day), or when you press
+*Sync now*. Once accounts are linked, the joint balance is the sum of the accounts you tick. The
+bank code follows the published protocol and is tested against a stand-in bridge. It has not been
+run against a live bank account by the author.
+
+## Where your data lives
+
+```
+data/data.json      everything you see on the page
+data/secrets.json   the bank access key, only if you link a bank
+```
+
+The `data/` folder is in `.gitignore`. Back up `data.json`, or use *Accounts → Download a backup*.
+
+## Who can reach it
+
+Anyone on your home network can open and change the page. There is no password, so treat it like
+a shared notebook on the kitchen table.
+
+- Requests from outside private network addresses are refused.
+- Other websites cannot write to it.
+- Only the files in `public/` are served.
+- To keep it to one computer, run `python3 server.py --bind 127.0.0.1`.
+
+Do not expose the port to the internet.
+
+## Options
+
+```
+python3 server.py --port 8770          port to listen on
+                  --bind 0.0.0.0       address to listen on (127.0.0.1 for this computer only)
+                  --name finances.local  name announced on the network ("" to turn off)
+                  --data ./data        folder for data.json
+                  --empty              start with no example data
+                  --quiet              do not log each request
+```
+
+The `.local` name is announced with `dns-sd` on macOS or `avahi-publish` on Linux, if present.
+Without either, use the computer's IP address.
+
+On macOS, if other devices cannot connect, the firewall may be blocking Python. Allow incoming
+connections for it in *System Settings → Network → Firewall → Options*.
+
+## Start it at login
+
+**macOS.** Edit the two paths in `deploy/launchd.plist.template`, then:
+
+```bash
+cp deploy/launchd.plist.template ~/Library/LaunchAgents/local.finance-dashboard.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.finance-dashboard.plist
+```
+
+**Linux.** Edit the path in `deploy/finance-dashboard.service`, then:
+
+```bash
+cp deploy/finance-dashboard.service ~/.config/systemd/user/
+systemctl --user enable --now finance-dashboard
+```
+
+## Tests
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+.venv/bin/playwright install chromium     # or set PW_CHANNEL=chrome to use installed Chrome
+.venv/bin/pytest
+```
+
+58 tests: 17 for the server and 41 that drive the page in a browser. The use cases and every flow
+they cover are listed in [tests/TEST_CASES.md](tests/TEST_CASES.md). Tests use their own temporary
+data folder and never touch `data/`.
+
+## Layout
+
+```
+server.py            the whole server: storage, CSV import, bank sync, static files
+public/index.html    page shell
+public/app.css       styles and both themes
+public/app.js        the app: state, rendering, forms
+tests/               pytest suites and the test-case catalogue
+deploy/              start-at-login templates
+```
+
+There is no build step. Edit a file and reload the page.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
