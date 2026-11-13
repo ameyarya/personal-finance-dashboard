@@ -15,3 +15,11 @@ test-results/
 *.local.json
 *.psv
 .privacy-terms.local
+.coverage
+.coverage.*
+htmlcov/
+tools/js-coverage/node_modules/
+.cov/
+js-coverage.json
+js-coverage-gaps.txt
+htmlcov-js/

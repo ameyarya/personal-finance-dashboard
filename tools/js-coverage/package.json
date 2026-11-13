@@ -1,0 +1,11 @@
+{
+  "name": "js-coverage-tools",
+  "private": true,
+  "description": "Measures how much of public/app.js the browser tests run. Used by tools/coverage.sh; nothing here ships.",
+  "dependencies": {
+    "istanbul-lib-coverage": "^3.2.2",
+    "istanbul-lib-instrument": "^6.0.3",
+    "istanbul-lib-report": "^3.0.1",
+    "istanbul-reports": "^3.1.7"
+  }
+}

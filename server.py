@@ -455,7 +455,7 @@ def add_statement_rows(parsed, window):
                 doc["cash"] = True
             cat = r.get("category")
             if not cat:
-                cat = categorize(r["desc"], -abs(r["amount"]))
+                cat = categorize(r["desc"], r["amount"] if r.get("cash") else -abs(r["amount"]))     # a deposit into a bank account is income
                 if r["amount"] > 0 and not r.get("cash"):
                     doc["refund"] = True
             doc["category"] = cat
@@ -682,7 +682,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(200, public_store())
         if parts == ["api", "sync", "log"]:
             q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-            since = int((q.get("since") or ["0"])[0] or 0)
+            try:
+                since = int((q.get("since") or ["0"])[0])
+            except ValueError:
+                since = 0
             with lock:
                 lines = [x for x in SYNC["log"] if x["n"] > since]
                 body = {"lines": lines, "last": SYNC["seq"], "reset": bool(SYNC["log"]) and since > SYNC["seq"],

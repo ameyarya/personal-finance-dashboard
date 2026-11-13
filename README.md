@@ -173,9 +173,12 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/pytest
 ```
 
-58 tests: 17 for the server and 41 that drive the page in a browser. The use cases and every flow
+Over 340 tests: the server, sign-in, statement readers, importer, privacy scanner and the page driven in a browser. The use cases and every flow
 they cover are listed in [tests/TEST_CASES.md](tests/TEST_CASES.md). Tests use their own temporary
 data folder and never touch `data/`.
+
+Coverage: `sh tools/coverage.sh` runs everything and reports Python (100%) and the page's JavaScript
+(about 93% of statements; the rest are guards the UI cannot reach). Needs `npm` once in `tools/js-coverage`.
 
 ## Layout
 

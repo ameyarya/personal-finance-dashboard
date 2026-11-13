@@ -1,0 +1,15 @@
+[run]
+branch = True
+parallel = True
+sigterm = True
+source =
+    .
+omit =
+    tests/*
+    .venv/*
+data_file = .coverage
+
+[report]
+show_missing = True
+exclude_also =
+    if __name__ == .__main__.:

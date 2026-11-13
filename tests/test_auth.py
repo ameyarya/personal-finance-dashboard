@@ -149,3 +149,96 @@ def test_cross_site_writes_are_still_refused_when_signed_in(server):
     _, _, head = server.raw("POST", "/api/account/setup", {"name": "Una", "password": "correct horse"})
     mine = {"Cookie": "fd_session=" + cookie_of(head)}
     assert server.call("PUT", "/api/doc/budgets/x", {"limit": 1}, {**mine, "Origin": "https://evil.example"})[0] == 403
+
+
+# ---------------------------------------------------------------- the awkward cases
+
+@pytest.mark.parametrize("name", ["", "   ", None, "x" * 61])
+def test_a_missing_or_absurd_name_is_refused(store, name):
+    with pytest.raises(auth.AuthError, match="Pick a name"):
+        store.set_password(name, "correct horse")
+
+
+def test_remove_one_of_two_people_keeps_sign_in_on_and_drops_their_sessions(store):
+    store.set_password("Una", "correct horse")
+    store.set_password("Dos", "second person 1")
+    token, _ = store.login("dos", "second person 1", "1.1.1.1")
+    store.remove_user("Dos")
+    assert store.enabled() and store.session_user(token) is None and store.names() == ["Una"]
+    store.remove_user("nobody")                                              # removing someone who is not there is fine
+
+
+def test_set_required_cannot_turn_sign_in_on_without_anyone_to_sign_in(store):
+    store.set_required(True)
+    assert not store.enabled()
+    store.set_password("Una", "correct horse", require=False)
+    assert not store.enabled()                                               # a password alone does not lock the page
+    store.set_required(True)
+    assert store.enabled()
+    store.set_required(False)
+    assert not store.enabled()
+
+
+def test_verify_never_crashes_on_odd_input_and_unknown_names_take_the_same_path(store):
+    store.set_password("Una", "correct horse")
+    for pw in (None, 5, b"bytes", ["x"], ""):
+        assert store.verify("Una", pw) is False
+    assert store.verify(None, "correct horse") is False
+
+
+def test_lock_out_grows_with_repeated_failures_and_a_success_clears_it(store, monkeypatch):
+    store.set_password("Una", "correct horse")
+    clock = {"t": 1000.0}
+    monkeypatch.setattr(auth.time, "time", lambda: clock["t"])
+    for _ in range(auth.MAX_FAILS):
+        with pytest.raises(auth.AuthError):
+            store.login("Una", "nope nope", "5.5.5.5")
+    with pytest.raises(auth.AuthError, match="Too many tries"):
+        store.login("Una", "correct horse", "5.5.5.5")
+    clock["t"] += auth.LOCK_SECONDS + 1                                      # a minute later the door opens again
+    token, _ = store.login("Una", "correct horse", "5.5.5.5")
+    assert token and "5.5.5.5" not in store.fails
+    for _ in range(auth.MAX_FAILS * 2):                                      # ten failures lock for longer than five
+        clock["t"] += auth.LOCK_SECONDS * 3
+        try:
+            store.login("Una", "nope nope", "6.6.6.6")
+        except auth.AuthError:
+            pass
+    count, until = store.fails["6.6.6.6"]
+    assert count == 10 and until - clock["t"] >= auth.LOCK_SECONDS * 2 - 1
+
+
+def test_expired_and_orphaned_sessions_are_dropped_and_odd_tokens_are_not_users(store, monkeypatch, tmp_path):
+    store.set_password("Una", "correct horse")
+    token, _ = store.login("Una", "correct horse", "1.1.1.1")
+    assert store.session_user("") is None and store.session_user(None) is None and store.session_user("nonsense") is None
+    monkeypatch.setattr(auth.time, "time", lambda: 10 ** 12)                  # far in the future: everything has expired
+    assert store.session_user(token) is None
+    assert auth.Auth(tmp_path).sessions == {}                                  # and a restart forgets them too
+    monkeypatch.undo()
+    store.logout("never-issued")                                               # logging out an unknown token is a no-op
+
+
+def test_a_session_whose_user_was_deleted_is_not_valid(store):
+    store.set_password("Una", "correct horse")
+    token, _ = store.login("Una", "correct horse", "1.1.1.1")
+    del store.users["una"]
+    assert store.session_user(token) is None
+
+
+def test_damaged_files_are_ignored_not_fatal(tmp_path):
+    (tmp_path / "users.json").write_text("{ this is not json")
+    (tmp_path / "sessions.json").write_text("[[[")
+    a = auth.Auth(tmp_path)
+    assert not a.enabled() and a.names() == []
+    (tmp_path / "users.json").write_text(json.dumps({"required": True, "users": {"una": {"name": "Una", "salt": "00" * 16, "hash": "x", "iter": 1}}}))
+    (tmp_path / "sessions.json").write_text(json.dumps({"abc": {"user": "ghost", "exp": 10 ** 12}}))
+    b = auth.Auth(tmp_path)
+    assert b.enabled() and b.sessions == {}                                    # a session for someone who does not exist is purged
+
+
+def test_old_hash_settings_still_verify(store):
+    import hashlib
+    salt = bytes(range(16))
+    store.users["una"] = {"name": "Una", "salt": salt.hex(), "iter": 1000, "hash": hashlib.pbkdf2_hmac("sha256", b"correct horse", salt, 1000).hex()}
+    assert store.verify("Una", "correct horse") and not store.verify("Una", "wrong horse")

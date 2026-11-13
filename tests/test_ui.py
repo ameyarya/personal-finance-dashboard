@@ -15,15 +15,6 @@ expect = pw.expect
 NOW = datetime.datetime(2026, 11, 12, 10, 0)
 
 
-@pytest.fixture(scope="session")
-def browser():
-    with pw.sync_playwright() as p:
-        channel = os.environ.get("PW_CHANNEL")
-        b = p.chromium.launch(channel=channel) if channel else p.chromium.launch()
-        yield b
-        b.close()
-
-
 def open_page(browser, server, path="/", **ctx):
     ctx.setdefault("reduced_motion", "reduce")  # animations are cosmetic; keep figures final for assertions
     context = browser.new_context(**ctx)
