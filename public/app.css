@@ -391,3 +391,20 @@ select::-ms-expand{display:none}
 @keyframes spin{to{transform:rotate(360deg)}}
 #btn-sync.spin svg{animation:spin 1s linear infinite}
 code{font:12px ui-monospace,Menlo,monospace;background:var(--glass2);border-radius:6px;padding:1px 5px}
+
+/* ---- live sync window ---- */
+.synclog{position:fixed;inset:0;z-index:60;display:grid;place-items:center;padding:16px;background:rgba(0,0,0,.55);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);animation:fadein .25s}
+.synclog[hidden]{display:none}
+.sl-box{width:min(780px,100%);max-height:min(86vh,720px);display:flex;flex-direction:column;gap:10px;padding:18px;border-radius:22px;border:1px solid var(--line);
+  background:color-mix(in srgb,var(--bg) 82%,transparent);box-shadow:var(--spec),0 40px 80px -30px rgba(0,0,0,.7);animation:rise .4s var(--ease)}
+.sl-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.sl-head small{display:block;color:var(--muted);margin-top:2px}
+.sl-link{display:flex;gap:8px}.sl-link input{flex:1;min-width:0;background:var(--glass);border:1px solid var(--line);border-radius:12px;padding:9px 12px}
+.sl-bar{height:8px}.sl-bar.ind i{width:35%!important;animation:slide 1.2s ease-in-out infinite}
+@keyframes slide{0%{transform:translateX(-100%)}100%{transform:translateX(300%)}}
+.sl-meta{display:flex;justify-content:space-between;color:var(--muted);font-size:12.5px;gap:10px}
+#sl-log{flex:1;min-height:180px;overflow:auto;margin:0;padding:12px;border-radius:14px;border:1px solid var(--line);background:rgba(0,0,0,.28);font:12px/1.55 ui-monospace,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
+#sl-log i{font-style:normal;color:var(--muted);margin-right:6px}
+.l-ok{color:var(--accent)}.l-warn{color:var(--out)}.l-error{color:var(--bad)}
+.sl-acts{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.sl-acts .spacer{flex:1}
+.btn.danger{border-color:color-mix(in srgb,var(--bad) 60%,transparent);color:var(--bad)}
+@media (max-width:560px){.sl-link{flex-direction:column}.sl-acts .spacer{display:none}}

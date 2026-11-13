@@ -656,6 +656,7 @@ def test_SYNC02_manual_sync_reads_a_pdf_and_adds_only_new_payments(browser, blan
     expect(blank.locator("#c-sync #sy-status")).to_contain_text("2 new payments", timeout=20000)
     rows = [t for t in empty_server.docs("transactions").values() if t.get("source") == "pdf"]
     assert sorted(t["amount"] for t in rows) == [-40.0, 2500.0] and all(t["cash"] for t in rows)
+    blank.click('#synclog [data-act="sl-close"]')
     blank.click('#c-sync [data-act="sync"]')
     expect(blank.locator("#c-sync #sy-status")).to_contain_text("0 new payments", timeout=20000)     # nothing is added twice
     assert len([t for t in empty_server.docs("transactions").values() if t.get("source") == "pdf"]) == 2
@@ -672,6 +673,7 @@ def test_SYNC03_sync_edge_cases_give_plain_messages(blank, empty_server, tmp_pat
         go(blank, "accounts")
         blank.click('#c-sync [data-act="sync"]')
         expect(blank.locator("#c-sync #sy-status")).to_contain_text(message, timeout=20000)
+        blank.click('#synclog [data-act="sl-close"]')
 
 
 def test_SYNC04_a_damaged_pdf_is_reported_and_does_not_stop_the_rest(blank, empty_server, tmp_path):
@@ -684,6 +686,7 @@ def test_SYNC04_a_damaged_pdf_is_reported_and_does_not_stop_the_rest(blank, empt
     go(blank, "accounts")
     blank.click('#c-sync [data-act="sync"]')
     expect(blank.locator("#c-sync")).to_contain_text("broken.pdf", timeout=20000)
+    expect(blank.locator("#sl-log")).to_contain_text("could not read it")
 
 
 # ---------------------------------------------------------------- phone to desktop, edge cases
@@ -733,3 +736,85 @@ def test_EDGE03_keyboard_search_palette_opens_filters_and_navigates(page):
     page.keyboard.press("Control+k")
     page.keyboard.press("Escape")
     expect(page.locator("#pal")).to_be_hidden()
+
+
+# ---------------------------------------------------------------- the live sync window
+
+def folder_with_pdfs(browser, tmp_path, n):
+    folder = tmp_path / "pdfs"
+    folder.mkdir()
+    for i in range(n):
+        make_pdf(browser, folder / ("s%d.pdf" % i), "Bank of America Account number: 1<br>Deposits and other additions Date Description Amount<br>"
+                 "0%d/05/25 Payroll ACME %d 100.00<br>Total deposits and other additions $100.00" % (i + 1, i))
+    return folder
+
+
+def test_SYNCWIN01_pressing_sync_opens_a_window_that_streams_what_is_happening(browser, blank, empty_server, tmp_path):
+    pytest.importorskip("pypdf")
+    folder = folder_with_pdfs(browser, tmp_path, 3)
+    empty_server.call("PUT", "/api/doc/settings/main", {"household": "H", "currency": "USD", "opening": 0, "members": ["A"], "fiscalYear": 2025, "sync": {"localFolder": str(folder), "auto": False}})
+    blank.reload()
+    blank.click("#btn-sync")                                     # the top-bar button works from any page
+    expect(blank.locator("#synclog")).to_be_visible()
+    log = blank.locator("#sl-log")
+    expect(log).to_contain_text("Sync started")
+    expect(log).to_contain_text("Found 3 statement PDFs")
+    expect(log).to_contain_text("[3/3] Reading")
+    expect(log).to_contain_text("3 new, 0 already in the dashboard", timeout=20000)
+    expect(blank.locator("#sl-state")).to_contain_text("Finished")
+    expect(blank.locator("#sl-stop")).to_be_disabled()
+    expect(blank.locator("#sl-run")).to_have_text("Run again")
+    blank.click('[data-act="sl-run"]')
+    expect(log).to_contain_text("unchanged, skipped", timeout=20000)                       # a new run starts a fresh log
+    assert "Reading pdfs" not in log.inner_text()
+    blank.click('[data-act="sl-full"]')
+    expect(log).to_contain_text("0 new, 3 already in the dashboard", timeout=20000)       # re-reading everything still adds nothing twice
+    blank.keyboard.press("Escape")
+    expect(blank.locator("#synclog")).to_be_hidden()
+
+
+def test_SYNCWIN02_stop_cancels_a_running_sync_and_adds_nothing(browser, tmp_path, monkeypatch):
+    pytest.importorskip("pypdf")
+    from conftest import Server
+    monkeypatch.setenv("FINANCES_SYNC_DELAY", "1.5")
+    folder = folder_with_pdfs(browser, tmp_path, 4)
+    server = Server(tmp_path / "data", "--empty").start()
+    try:
+        server.call("PUT", "/api/doc/settings/main", {"household": "H", "currency": "USD", "opening": 0, "members": ["A"], "fiscalYear": 2025, "sync": {"localFolder": str(folder), "auto": False}})
+        page = open_page(browser, server)
+        page.click("#btn-sync")
+        expect(page.locator("#sl-state")).to_contain_text("Running", timeout=10000)
+        expect(page.locator("#sl-stop")).to_be_enabled()
+        expect(page.locator("#sl-run")).to_be_disabled()
+        expect(page.locator("#sl-log")).to_contain_text("[1/4] Reading", timeout=10000)
+        page.click("#sl-stop")
+        expect(page.locator("#sl-log")).to_contain_text("Stopped by you", timeout=15000)
+        expect(page.locator("#sl-state")).to_contain_text("Stopped or failed")
+        assert not [t for t in server.docs("transactions").values() if t.get("source") == "pdf"]
+        page.context.close()
+    finally:
+        server.stop()
+
+
+def test_SYNCWIN03_paste_a_drive_link_and_save_it_from_the_window(blank, empty_server):
+    blank.click("#btn-sync")
+    expect(blank.locator("#synclog")).to_be_visible()
+    blank.fill("#sl-link", "not a drive link")
+    blank.click("#sl-savelink")
+    expect(blank.locator("#toast")).to_contain_text("does not look like a Google Drive folder link")
+    blank.fill("#sl-link", "https://drive.google.com/drive/folders/abcDEF_123?usp=drive_link")
+    blank.click("#sl-savelink")
+    expect(blank.locator("#toast")).to_contain_text("Folder link saved")
+    assert empty_server.docs("settings")["main"]["sync"]["driveLink"].startswith("https://drive.google.com/drive/folders/abcDEF_123")
+
+
+def test_SYNCWIN04_window_fits_a_phone_and_buttons_do_not_overflow(browser, server):
+    p = open_page(browser, server, viewport={"width": 320, "height": 560})
+    p.click("#btn-sync")
+    expect(p.locator("#synclog")).to_be_visible()
+    box = p.locator(".sl-box").bounding_box()
+    assert box["x"] >= 0 and box["x"] + box["width"] <= 320 and box["y"] >= 0 and box["y"] + box["height"] <= 560
+    for sel in ("#sl-stop", "#sl-run", '[data-act="sl-close"]', "#sl-savelink"):
+        b = p.locator(sel).first.bounding_box()
+        assert b and b["x"] >= 0 and b["x"] + b["width"] <= 320, sel
+    p.context.close()

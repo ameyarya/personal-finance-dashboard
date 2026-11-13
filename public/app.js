@@ -125,6 +125,7 @@ function render(){
   $('lede').textContent=lede;
   {const b=fyOf(),y=S.period==='year';$('next').disabled=y?S.month.slice(0,4)>=b.hi.slice(0,4):S.month>=b.hi;$('prev').disabled=y?S.month.slice(0,4)<=b.lo.slice(0,4):S.month<=b.lo}
   $('ic-search').innerHTML=ic('search');$('btn-add').innerHTML=ic('plus');$('btn-bell').innerHTML=ic('bell');$('btn-sync').innerHTML=ic('refresh');$('btn-sync').classList.toggle('spin',!!(S.sync&&S.sync.running));
+  if(SL.was&&!(S.sync&&S.sync.running)&&!SL.open)toast(S.sync.message||'Sync finished');SL.was=!!(S.sync&&S.sync.running);
   $('btn-settings').textContent=(c.household||'H').split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase();
   $('btn-bell').classList.toggle('has',S.ready&&notices(m).length>0);
   const th=themeNow();$('btn-theme').innerHTML=ic(th==='light'?'sun':'moon');$('btn-theme').title='Switch to '+(th==='light'?'dark':'light')+' theme';$('btn-theme').setAttribute('aria-label',$('btn-theme').title);if(document.documentElement.dataset.theme!==th)document.documentElement.dataset.theme=th;
@@ -387,7 +388,7 @@ function sourcesCard(){
 function syncCard(){
   const y=S.settings&&S.settings.sync||{},st=S.sync||{},when=st.lastRun?new Date(st.lastRun).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'';
   const warn=[];if(!st.pypdf)warn.push('Reading PDFs needs <b>pypdf</b>: <code>pip install pypdf</code>.');if(y.driveLink&&!st.rclone)warn.push('Google Drive needs <b>rclone</b>: <code>brew install rclone</code>, then <code>rclone config create gdrive drive scope=drive.readonly</code> and sign in once.');
-  return '<div class="head"><div><h2>Statement sync</h2><small>Reads the PDF statements in a folder and adds any payments that are missing</small></div><button class="btn primary sm" data-act="sync"'+(st.running?' disabled':'')+'>'+(st.running?'Syncing…':'Sync now')+'</button></div>'+
+  return '<div class="head"><div><h2>Statement sync</h2><small>Reads the PDF statements in a folder and adds any payments that are missing</small></div><div class="toolbar"><button class="link" data-act="sl-open">View log</button><button class="btn primary sm" data-act="sync"'+(st.running?' disabled':'')+'>'+(st.running?'Syncing…':'Sync now')+'</button></div></div>'+
    (warn.length?'<div class="hint">'+ic('info','accent')+'<span>'+warn.join(' ')+'</span></div>':'')+
    '<div class="fld"><label for="sy-link">Google Drive folder link</label><input id="sy-link" type="url" placeholder="https://drive.google.com/drive/folders/…" value="'+esc(y.driveLink||'')+'"></div>'+
    '<div class="two"><div class="fld"><label for="sy-remote">rclone remote name</label><input id="sy-remote" placeholder="gdrive" value="'+esc(y.rcloneRemote||'')+'"></div><div class="fld"><label for="sy-every">Check every (minutes)</label><input id="sy-every" type="number" min="5" step="5" value="'+esc(y.everyMinutes||60)+'"></div></div>'+
@@ -402,6 +403,31 @@ function dataCard(){
    '<div class="toolbar"><button class="btn" data-act="import-csv">'+ic('upload')+'Import a bank statement (CSV)</button><a class="btn" href="api/export.csv" download="payments.csv">'+ic('download')+'Export payments</a><a class="btn" href="api/backup.json" download="finance-backup.json">'+ic('download')+'Download a backup</a></div>'+
    '<div class="sub">'+plural(S.txRaw.length,'payment')+' · '+plural(S.rules.length,'category rule')+' remembered'+(S.rules.length?' <button class="link" data-act="rules">Review</button>':'')+'</div>';
 }
+
+/* ---------- live sync window ---------- */
+const SL={open:false,last:0,runId:'',timer:0,clock:0,running:false,was:false,opener:null,text:[]};
+const slLine=x=>'<span class="l-'+x.l+'"><i>'+x.t+'</i>'+esc(x.m)+'</span>';
+function slElapsed(){if(!SL.running||!SL.runId){$('sl-time').textContent='';return}const s=Math.max(0,Math.round((Date.now()-new Date(SL.runId).getTime())/1000));$('sl-time').textContent='Running for '+Math.floor(s/60)+':'+pad(s%60)}
+async function slPoll(){
+  let j;try{j=await fetch('api/sync/log?since='+SL.last,{cache:'no-store'}).then(r=>r.json())}catch(e){$('sl-state').textContent='Cannot reach the server.';return}
+  const log=$('sl-log');
+  if(j.last<SL.last||(j.started&&j.started!==SL.runId&&SL.runId)){SL.last=0;SL.text=[];log.innerHTML='';SL.runId=j.started||SL.runId;return slPoll()}
+  SL.runId=j.started||SL.runId;
+  if(j.lines.length){if(log.querySelector('.ph'))log.innerHTML='';log.insertAdjacentHTML('beforeend',j.lines.map(slLine).join('\n')+'\n');j.lines.forEach(x=>SL.text.push(x.t+' '+x.m));SL.last=j.last;if($('sl-follow').checked)log.scrollTop=log.scrollHeight}
+  else if(!SL.text.length&&!j.running)log.innerHTML='<span class="l-info ph">Nothing has run yet. Press Run to start a sync.</span>';
+  SL.running=j.running;
+  $('sl-state').innerHTML=j.running?'<b>Running</b> · '+esc(j.phase||'working')+(j.total?' · '+j.done+' of '+j.total+' statements':''):(j.message?(j.ok===false?'<span class="err">Stopped or failed</span> · ':'<b>Finished</b> · ')+esc(j.message):'Idle');
+  const bar=$('sl-bar');bar.classList.toggle('ind',j.running&&!j.total);$('sl-fill').style.width=j.total?Math.round(j.done/j.total*100)+'%':(j.running?'':(j.ok?'100%':'0%'));
+  $('sl-step').textContent=j.running?(j.phase||''):'';
+  $('sl-stop').disabled=!j.running;$('sl-run').disabled=j.running;$('sl-full').disabled=j.running;$('sl-run').textContent=j.running?'Running…':(SL.text.length?'Run again':'Run');
+  slElapsed();
+}
+function openSyncLog(){const o=$('synclog');SL.opener=document.activeElement;SL.open=true;o.hidden=false;document.body.style.overflow='hidden';
+  const y=S.settings&&S.settings.sync||{};$('sl-link').value=y.driveLink||'';$('sl-log').innerHTML='';SL.last=0;SL.text=[];SL.runId='';
+  slPoll();clearInterval(SL.timer);SL.timer=setInterval(slPoll,700);clearInterval(SL.clock);SL.clock=setInterval(slElapsed,1000);$('sl-log').focus()}
+function closeSyncLog(){SL.open=false;$('synclog').hidden=true;document.body.style.overflow='';clearInterval(SL.timer);clearInterval(SL.clock);if(SL.opener&&SL.opener.focus)try{SL.opener.focus()}catch(e){}}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&SL.open){e.preventDefault();closeSyncLog()}});
+document.addEventListener('click',e=>{if(e.target.id==='synclog')closeSyncLog()});
 
 /* ---------- search palette and popovers ---------- */
 let palSel=0,palItems=[];
@@ -486,7 +512,14 @@ async function csvPreview(flip){
 
 const col=n=>S.db.collection(n);
 const ACT={
-  async sync(){try{await api('api/sync',{});S.sync=Object.assign({},S.sync,{running:true});toast('Sync started');render()}catch(e){toast(e.message)}},
+  async sync(){openSyncLog();try{await api('api/sync',{});slPoll()}catch(e){toast(e.message)}},
+  'sl-open'(){openSyncLog()}, 'sl-close'(){closeSyncLog()}, 'sl-run'(){ACT.sync()},
+  async 'sl-full'(){try{await api('api/sync',{force:true});slPoll()}catch(e){toast(e.message)}},
+  async 'sync-stop'(){try{await api('api/sync/stop',{});toast('Stopping…');slPoll()}catch(e){toast(e.message)}},
+  async 'sl-copy'(){const t=SL.text.join('\n');try{await navigator.clipboard.writeText(t);toast('Log copied')}catch(e){toast('Could not copy. Use Save log instead.')}},
+  'sl-save'(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([SL.text.join('\n')+'\n'],{type:'text/plain'}));a.download='sync-log.txt';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),2000)},
+  async 'sl-savelink'(){const v=($('sl-link').value||'').trim();if(v&&!/\/folders\/[\w-]+|[?&]id=[\w-]+/.test(v))return toast('That does not look like a Google Drive folder link.');
+    const y=Object.assign({},S.settings&&S.settings.sync,{driveLink:v});await save(patchSettings({sync:y}),v?'Folder link saved':'Folder link cleared')},
   'save-sync'(){const v=id=>($(id)&&$(id).value||'').trim(),every=Math.max(5,parseInt(v('sy-every'),10)||60);
     save(patchSettings({sync:{driveLink:v('sy-link'),rcloneRemote:v('sy-remote'),localFolder:v('sy-local'),everyMinutes:every,auto:$('sy-auto').checked}}),'Sync settings saved')},
   csel(id){S.cardIdx=+id;S.flip=false;cardsRefresh()},

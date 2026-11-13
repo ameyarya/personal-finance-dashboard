@@ -23,6 +23,7 @@ import ssl
 import subprocess
 import sys
 import threading
+import urllib.parse
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -38,7 +39,7 @@ MIME = {".png": "image/png", ".ico": "image/svg+xml", ".html": "text/html; chars
         ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml", ".json": "application/json"}
 
 lock = threading.RLock()
-SYNC = {"running": False}
+SYNC = {"running": False, "log": [], "seq": 0, "cancel": threading.Event(), "proc": None, "phase": "", "done": 0, "total": 0, "started": ""}
 CFG = {}
 STORE = {}
 
@@ -139,7 +140,7 @@ def persist():
 
 def public_store():
     sync = {k: v for k, v in STORE.get("sync", {}).items() if k != "files"}
-    sync.update(running=SYNC["running"], rclone=bool(find_rclone()), pypdf=pypdf_available())
+    sync.update(running=SYNC["running"], phase=SYNC["phase"], done=SYNC["done"], total=SYNC["total"], started=SYNC["started"], rclone=bool(find_rclone()), pypdf=pypdf_available())
     return {"version": STORE["version"], "collections": STORE["collections"], "sync": sync}
 
 
@@ -311,8 +312,27 @@ def sync_settings():
     return cfg
 
 
+def slog(msg, level="info"):
+    """Add a line to the live log that the page shows while a sync runs."""
+    with lock:
+        SYNC["seq"] += 1
+        SYNC["log"].append({"n": SYNC["seq"], "t": time.strftime("%H:%M:%S"), "l": level, "m": msg})
+        del SYNC["log"][:-1500]
+
+
+class Stopped(Exception):
+    pass
+
+
+def stop_sync():
+    SYNC["cancel"].set()
+    proc = SYNC.get("proc")
+    if proc and proc.poll() is None:
+        proc.terminate()
+
+
 def drive_pull(cfg, dest):
-    """Copy the PDFs from a Google Drive folder with rclone. The folder id comes from the link; rclone holds the sign-in."""
+    """Copy the PDFs from a Google Drive folder with rclone, streaming what it does into the log. The sign-in lives in rclone."""
     link = (cfg.get("driveLink") or "").strip()
     if not link:
         return
@@ -325,16 +345,35 @@ def drive_pull(cfg, dest):
     if not rclone:
         raise SyncError("rclone is not installed. Install it (brew install rclone) or fill in a local folder instead.")
     dest.mkdir(parents=True, exist_ok=True)
-    cmd = [rclone, "copy", "%s,root_folder_id=%s:" % (remote, folder), str(dest), "--include", "*.pdf", "--drive-acknowledge-abuse"]
+    SYNC["phase"] = "Downloading from Google Drive"
+    slog("Asking Google Drive for the PDFs in the folder (remote '%s')" % remote)
+    cmd = [rclone, "copy", "%s,root_folder_id=%s:" % (remote, folder), str(dest), "--include", "*.pdf", "--drive-acknowledge-abuse", "-v", "--stats", "3s", "--stats-one-line"]
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+    SYNC["proc"] = proc
+    watchdog = threading.Timer(1200, proc.kill)
+    watchdog.start()
+    tail = []
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=1200)
-    except subprocess.TimeoutExpired:
-        raise SyncError("Google Drive took too long to answer. It will try again at the next sync.")
-    if r.returncode:
-        err = (r.stderr or "").strip().splitlines()[-1:] or ["rclone failed"]
-        if "didn't find section" in r.stderr or "not found in config" in r.stderr:
+        for line in proc.stdout:
+            line = re.sub(r"^\d{4}/\d\d/\d\d \d\d:\d\d:\d\d ", "", line.rstrip())
+            if not line or "shared Google Drive client_id" in line:
+                continue
+            tail.append(line)
+            slog(line, "warn" if line.startswith(("ERROR", "NOTICE")) else "info")
+        proc.wait()
+    finally:
+        watchdog.cancel()
+        SYNC["proc"] = None
+    if SYNC["cancel"].is_set():
+        raise Stopped()
+    if proc.returncode:
+        text = "\n".join(tail)
+        if "didn't find section" in text or "not found in config" in text:
             raise SyncError("Sign in to Google Drive once: run  rclone config create %s drive scope=drive.readonly  and approve in the browser." % remote)
-        raise SyncError("Google Drive said: " + err[0][:200])
+        if proc.returncode < 0:
+            raise SyncError("Google Drive took too long to answer. It will try again at the next sync.")
+        raise SyncError("Google Drive said: " + (tail[-1][:200] if tail else "rclone failed"))
+    slog("Download finished", "ok")
 
 
 def norm_key(date, amount, card):
@@ -342,14 +381,14 @@ def norm_key(date, amount, card):
 
 
 def add_statement_rows(parsed, fiscal):
-    """Store rows from PDFs that the dashboard does not have yet. Returns (added, skipped_outside_year)."""
+    """Store rows from PDFs that the dashboard does not have yet. Returns (added, outside_year, duplicates)."""
     with lock:
         docs = STORE["collections"]["transactions"]
         have = {}
         for t in docs.values():
             k = norm_key(t.get("date", ""), t.get("amount", 0), t.get("card", ""))
             have[k] = have.get(k, 0) + 1
-        added = skipped = 0
+        added = skipped = dupes = 0
         seen = {}
         for r in parsed:
             if fiscal and not r["date"].startswith(str(fiscal)):
@@ -358,6 +397,7 @@ def add_statement_rows(parsed, fiscal):
             k = norm_key(r["date"], r["amount"], r["card"])
             if have.get(k, 0) > 0:
                 have[k] -= 1
+                dupes += 1
                 continue
             seen[k] = seen.get(k, 0) + 1
             doc = {"date": r["date"], "desc": r["desc"], "amount": r["amount"], "card": r["card"], "who": "", "source": "pdf"}
@@ -371,7 +411,7 @@ def add_statement_rows(parsed, fiscal):
             doc["category"] = cat
             docs["pdf-" + hashlib.sha1(("%s|%s|%s|%s|%d" % (r["date"], r["desc"], r["amount"], r["card"], seen[k])).encode()).hexdigest()[:16]] = doc
             added += 1
-        return added, skipped
+        return added, skipped, dupes
 
 
 def run_sync(force=False):
@@ -379,8 +419,11 @@ def run_sync(force=False):
     with lock:
         if SYNC["running"]:
             return
-        SYNC["running"] = True
-    status = {"lastRun": dt.datetime.now().isoformat(timespec="seconds"), "added": 0, "pdfs": 0, "unreadable": [], "message": "", "ok": True}
+        SYNC.update(running=True, phase="Starting", done=0, total=0, started=dt.datetime.now().isoformat(timespec="milliseconds"))
+        SYNC["cancel"].clear()
+        SYNC["log"] = []
+    status = {"lastRun": SYNC["started"], "added": 0, "pdfs": 0, "unreadable": [], "message": "", "ok": True}
+    slog("Sync started%s" % (" (re-reading every statement)" if force else ""))
     try:
         cfg = sync_settings()
         folders = []
@@ -393,42 +436,66 @@ def run_sync(force=False):
             p = Path(local).expanduser()
             if not p.is_dir():
                 raise SyncError("The local folder %s does not exist." % local)
+            slog("Using the folder on this computer: %s" % p)
             folders.append(p)
         if not folders:
             raise SyncError("Add a Google Drive folder link or a local folder first.")
         if not pypdf_available():
             raise SyncError("Reading PDFs needs pypdf. Install it with: pip install pypdf")
+        files = [f for folder in folders for f in sorted(folder.rglob("*.pdf"))]
         with lock:
             seen_files = STORE["sync"].setdefault("files", {})
-        parsed, total = [], 0
-        for folder in folders:
-            for f in sorted(folder.rglob("*.pdf")):
-                total += 1
-                sig = "%d-%d" % (f.stat().st_size, int(f.stat().st_mtime))
-                if seen_files.get(str(f)) == sig and not force:
-                    continue
-                try:
-                    rows = statements.parse_pdf(f, f.parent.name)
-                except Exception as e:  # a damaged or protected file must not stop the rest
-                    status["unreadable"].append("%s (%s)" % (f.name, str(e)[:60]))
-                    continue
-                if rows is None:
-                    status["unreadable"].append("%s (layout not recognised)" % f.name)
-                else:
-                    parsed.extend(rows)
-                seen_files[str(f)] = sig
-        added, skipped = add_statement_rows(parsed, cfg.get("fiscalYear"))
-        status.update(added=added, pdfs=total)
-        status["message"] = "%d new payment%s from %d statement%s%s." % (added, "" if added == 1 else "s", total, "" if total == 1 else "s",
+            SYNC.update(phase="Reading statements", done=0, total=len(files))
+        slog("Found %d statement PDF%s" % (len(files), "" if len(files) == 1 else "s"))
+        parsed, pending = [], {}
+        for i, f in enumerate(files, 1):
+            if SYNC["cancel"].is_set():
+                raise Stopped()
+            SYNC["done"] = i - 1
+            time.sleep(float(os.environ.get("FINANCES_SYNC_DELAY", "0")))   # lets tests watch a slow sync
+            sig = "%d-%d" % (f.stat().st_size, int(f.stat().st_mtime))
+            name = "%s/%s" % (f.parent.name, f.name)
+            if seen_files.get(str(f)) == sig and not force:
+                slog("[%d/%d] %s: unchanged, skipped" % (i, len(files), name))
+                continue
+            slog("[%d/%d] Reading %s" % (i, len(files), name))
+            try:
+                rows = statements.parse_pdf(f, f.parent.name)
+            except Exception as e:  # a damaged or protected file must not stop the rest
+                status["unreadable"].append("%s (%s)" % (f.name, str(e)[:60]))
+                slog("    could not read it: %s" % str(e)[:100], "error")
+                continue
+            if rows is None:
+                status["unreadable"].append("%s (layout not recognised)" % f.name)
+                slog("    layout not recognised, left alone", "warn")
+            else:
+                parsed.extend(rows)
+                slog("    %d payment%s found" % (len(rows), "" if len(rows) == 1 else "s"))
+            pending[str(f)] = sig
+        SYNC.update(done=len(files), phase="Adding payments")
+        if SYNC["cancel"].is_set():
+            raise Stopped()
+        added, skipped, dupes = add_statement_rows(parsed, cfg.get("fiscalYear"))
+        with lock:
+            seen_files.update(pending)
+        slog("%d new, %d already in the dashboard%s" % (added, dupes, (", %d outside FY%s ignored" % (skipped, cfg["fiscalYear"])) if skipped else ""), "ok")
+        status.update(added=added, pdfs=len(files))
+        status["message"] = "%d new payment%s from %d statement%s%s." % (added, "" if added == 1 else "s", len(files), "" if len(files) == 1 else "s",
                                                                           ("; %d outside FY%s skipped" % (skipped, cfg["fiscalYear"])) if skipped else "")
+    except Stopped:
+        status.update(ok=False, message="Stopped. Nothing was added.")
+        slog("Stopped by you. Nothing was added; statements already read will be read again next time.", "warn")
     except SyncError as e:
         status.update(ok=False, message=str(e))
+        slog(str(e), "error")
     except Exception as e:
         status.update(ok=False, message="Sync failed: %s" % str(e)[:200])
+        slog("Sync failed: %s" % str(e)[:200], "error")
     finally:
+        slog("Finished: " + status["message"], "ok" if status["ok"] else "warn")
         with lock:
             STORE["sync"].update(status)
-            SYNC["running"] = False
+            SYNC.update(running=False, phase="")
             persist()
 
 
@@ -512,6 +579,15 @@ class Handler(BaseHTTPRequestHandler):
         if parts == ["api", "data"]:
             with lock:
                 return self.send_json(200, public_store())
+        if parts == ["api", "sync", "log"]:
+            q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            since = int((q.get("since") or ["0"])[0] or 0)
+            with lock:
+                lines = [x for x in SYNC["log"] if x["n"] > since]
+                body = {"lines": lines, "last": SYNC["seq"], "reset": bool(SYNC["log"]) and since > SYNC["seq"],
+                        "running": SYNC["running"], "phase": SYNC["phase"], "done": SYNC["done"], "total": SYNC["total"], "started": SYNC["started"],
+                        "ok": STORE["sync"].get("ok"), "message": STORE["sync"].get("message", "")}
+            return self.send_json(200, body)
         if parts == ["api", "export.csv"]:
             out = io.StringIO()
             w = csv.writer(out)
@@ -543,6 +619,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if parts == ["api", "batch"]:
                 return self.batch(body)
+            if parts == ["api", "sync", "stop"]:
+                stop_sync()
+                return self.send_json(200, {"stopping": True})
             if parts == ["api", "sync"]:
                 if SYNC["running"]:
                     return self.send_json(200, {"running": True})
