@@ -50,37 +50,37 @@ def test_create_update_delete_and_file_on_disk(server):
 
 
 def test_data_survives_a_restart(server):
-    server.call("PUT", "/api/doc/pots/keep", {"name": "Keep me", "target": 10, "saved": 1})
+    server.call("PUT", "/api/doc/budgets/keep", {"name": "Keep me", "target": 10, "saved": 1})
     server.stop()
     server.start()
-    assert server.docs("pots")["keep"]["name"] == "Keep me"
+    assert server.docs("budgets")["keep"]["name"] == "Keep me"
 
 
 def test_rejects_bad_requests(server):
-    assert server.call("PATCH", "/api/doc/pots/nope", {"saved": 1})[0] == 404
+    assert server.call("PATCH", "/api/doc/budgets/nope", {"saved": 1})[0] == 404
     assert server.call("PUT", "/api/doc/secrets/x", {"a": 1})[0] == 404
-    assert server.call("PUT", "/api/doc/pots/bad%20id!", {"a": 1})[0] in (400, 404)
-    assert server.call("PUT", "/api/doc/pots/x", b"[1,2]")[0] == 400
-    assert server.call("PUT", "/api/doc/pots/x", b"not json")[0] == 400
+    assert server.call("PUT", "/api/doc/budgets/bad%20id!", {"a": 1})[0] in (400, 404)
+    assert server.call("PUT", "/api/doc/budgets/x", b"[1,2]")[0] == 400
+    assert server.call("PUT", "/api/doc/budgets/x", b"not json")[0] == 400
 
 
 def test_other_websites_cannot_write(server):
     before = server.data()["version"]
-    assert server.call("PUT", "/api/doc/pots/x", {"a": 1}, {"Origin": "https://evil.example"})[0] == 403
-    assert server.call("PUT", "/api/doc/pots/x", {"a": 1}, {"Content-Type": "text/plain"})[0] == 403
+    assert server.call("PUT", "/api/doc/budgets/x", {"a": 1}, {"Origin": "https://evil.example"})[0] == 403
+    assert server.call("PUT", "/api/doc/budgets/x", {"a": 1}, {"Content-Type": "text/plain"})[0] == 403
     assert server.call("POST", "/api/batch", {"writes": []}, {"Origin": "https://evil.example"})[0] == 403
     assert server.data()["version"] == before
     same_origin = {"Origin": server.url}
-    assert server.call("PUT", "/api/doc/pots/x", {"a": 1}, same_origin)[0] == 200
+    assert server.call("PUT", "/api/doc/budgets/x", {"a": 1}, same_origin)[0] == 200
 
 
 def test_batch_applies_all_writes(server):
-    writes = [{"op": "set", "col": "pots", "id": "a", "data": {"name": "A", "target": 1, "saved": 0}},
-              {"op": "update", "col": "pots", "id": "a", "data": {"saved": 1}},
-              {"op": "delete", "col": "pots", "id": "s-trip"}]
+    writes = [{"op": "set", "col": "budgets", "id": "a", "data": {"name": "A", "target": 1, "saved": 0}},
+              {"op": "update", "col": "budgets", "id": "a", "data": {"saved": 1}},
+              {"op": "delete", "col": "budgets", "id": "s-trip"}]
     assert server.call("POST", "/api/batch", {"writes": writes})[0] == 200
-    pots = server.docs("pots")
-    assert pots["a"]["saved"] == 1 and "s-trip" not in pots
+    budgets = server.docs("budgets")
+    assert budgets["a"]["saved"] == 1 and "s-trip" not in budgets
     assert server.call("POST", "/api/batch", {"writes": [{"op": "set", "col": "nope", "id": "a", "data": {}}]})[0] == 400
 
 

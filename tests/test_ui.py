@@ -78,7 +78,7 @@ def test_OV01_overview_shows_usd_example_figures(page, server):
     expect(page.locator("#balance")).to_have_text("${:,}".format(round(server.balance())))
     expect(page.locator("#banner")).to_contain_text("Example data")
     expect(page.locator("#lede")).to_contain_text("Paycheck (Sam) lands in 8 days")
-    for card in ("c-balance", "c-flow", "c-cats", "c-tx", "c-noticed", "c-pots", "c-due"):
+    for card in ("c-balance", "c-flow", "c-cats", "c-tx", "c-noticed", "c-due"):
         expect(page.locator("#" + card)).to_be_visible()
     expect(page.locator("#chart svg")).to_be_visible()
     expect(page.locator("#c-tx .row")).to_have_count(6)
@@ -119,7 +119,6 @@ def test_OV06_empty_household_shows_guidance_not_errors(blank):
     expect(blank.locator("#balance")).to_have_text("$0")
     expect(blank.locator("#banner")).to_be_hidden()
     expect(blank.locator("#c-tx")).to_contain_text("No payments recorded")
-    expect(blank.locator("#c-pots")).to_contain_text("No pots yet")
     expect(blank.locator("#c-due")).to_contain_text("No regular bills")
     expect(blank.locator("#c-noticed")).to_contain_text("Nothing stands out")
 
@@ -127,7 +126,7 @@ def test_OV06_empty_household_shows_guidance_not_errors(blank):
 # ---------------------------------------------------------------- navigation
 
 def test_NAV01_every_page_opens_from_the_sidebar(page):
-    for view, title in (("payments", "Payments"), ("bills", "Bills"), ("budgets", "Budgets"), ("pots", "Pots"),
+    for view, title in (("payments", "Payments"), ("bills", "Bills"), ("budgets", "Budgets"), ("cards", "Cards"),
                         ("insights", "Insights"), ("household", "Household"), ("accounts", "Accounts"), ("overview", "Good morning")):
         go(page, view)
         expect(page.locator("#greet")).to_have_text(title)
@@ -168,16 +167,19 @@ def test_NAV04_phone_layout_has_bottom_bar_and_no_sideways_scroll(browser, serve
     p.context.close()
 
 
-def test_NAV05_theme_button_cycles_and_is_remembered(page):
+def test_NAV05_theme_button_toggles_light_and_dark_and_is_remembered(page, server):
     html = page.locator("html")
+    first = html.get_attribute("data-theme")
+    assert first in ("light", "dark")
+    other = "light" if first == "dark" else "dark"
     page.click("#btn-theme")
-    expect(html).to_have_attribute("data-theme", "light")
+    expect(html).to_have_attribute("data-theme", other)
     page.click("#btn-theme")
-    expect(html).to_have_attribute("data-theme", "dark")
+    expect(html).to_have_attribute("data-theme", first)
+    page.click("#btn-theme")
     page.reload()
-    expect(html).to_have_attribute("data-theme", "dark")
-    page.click("#btn-theme")
-    assert html.get_attribute("data-theme") is None
+    expect(html).to_have_attribute("data-theme", other)
+    assert server.docs("settings")["main"]["theme"] == other   # kept in the data file too
 
 
 # ---------------------------------------------------------------- payments
@@ -379,7 +381,7 @@ def test_BILL04_overdue_bill_is_flagged(blank, empty_server):
     expect(blank.locator('[data-rec="late"] .pill.bad')).to_have_text("Overdue")
 
 
-# ---------------------------------------------------------------- budgets, pots, household
+# ---------------------------------------------------------------- budgets, household
 
 def test_BUD01_set_a_budget_and_see_over_budget(page):
     go(page, "budgets")
@@ -394,36 +396,6 @@ def test_BUD01_set_a_budget_and_see_over_budget(page):
     expect(page.locator('[data-cat="Dining"]')).to_contain_text("no budget")
     go(page, "overview")
     expect(page.locator("#c-cats")).to_contain_text("Over")
-
-
-def test_POT01_create_a_pot_and_move_money_in(page, server):
-    before = round(server.balance())
-    go(page, "pots")
-    page.click('[data-act="add-pot"]')
-    page.fill("#f-name", "New bike")
-    page.fill("#f-target", "800")
-    page.fill("#f-saved", "100")
-    page.click("#dlg-ok")
-    pot = page.locator("#c-pots .cat", has_text="New bike")
-    expect(pot).to_contain_text("$100 of $800")
-    pot.locator('[data-act="pot"]').click()
-    page.fill("#f-amount", "700")
-    page.click("#dlg-ok")
-    expect(page.locator("#toast")).to_contain_text("Moved $700 to New bike")
-    expect(pot).to_contain_text("$800 of $800")
-    expect(pot.locator(".pill.ok")).to_have_text("Full")
-    go(page, "overview")
-    expect(page.locator("#balance")).to_have_text("${:,}".format(before - 700))
-    go(page, "payments")
-    expect(page.locator("#tx-list .row", has_text="To New bike")).to_contain_text("Savings")
-
-
-def test_POT02_remove_a_pot(page):
-    go(page, "pots")
-    page.locator('[data-pot="s-trip"] [data-act="pot"]').click()
-    page.click("#dlg-extra")
-    expect(page.locator("#toast")).to_contain_text("Removed Summer trip")
-    expect(page.locator('[data-pot="s-trip"]')).to_have_count(0)
 
 
 def test_HOUSE01_spending_is_split_by_person(page):
@@ -470,7 +442,7 @@ def test_SET02_clear_examples_needs_a_second_click(page, server):
     expect(page.locator("#banner")).to_be_hidden()
     expect(page.locator("#balance")).to_have_text("$0")
     c = server.data()["collections"]
-    assert not c["transactions"] and not c["pots"] and not c["recurring"] and not c["budgets"]
+    assert not c["transactions"] and not c["recurring"] and not c["budgets"]
     assert c["settings"]["main"]["currency"] == "USD" and "sample" not in c["settings"]["main"]
 
 
@@ -529,3 +501,235 @@ def test_NET02_server_going_away_is_reported_and_recovers(page, server):
     server.start()
     page.clock.run_for(5000)
     expect(page.locator("#banner")).to_contain_text("Example data", timeout=10000)
+
+
+# ---------------------------------------------------------------- this round: removed pieces, year view, owners, sync, dropdowns
+
+def test_GONE01_no_pots_no_send_icon(page):
+    expect(page.locator("#btn-send")).to_have_count(0)
+    expect(page.locator('#nav button[data-id="pots"]')).to_have_count(0)
+    page.goto(page.url.split("#")[0] + "#pots")
+    expect(page.locator("#greet")).to_have_text("Good morning")      # an unknown page falls back to the overview
+    expect(page.locator("#c-pots")).to_have_count(0)
+
+
+def test_GONE02_fiscal_year_card_is_gone(blank, empty_server):
+    empty_server.call("PUT", "/api/doc/settings/main", {"household": "H", "currency": "USD", "opening": 0, "members": ["A"], "fiscalYear": 2025})
+    empty_server.call("PUT", "/api/doc/transactions/x", {"date": "2025-03-04", "desc": "Thing", "amount": -5, "category": "Dining", "who": ""})
+    blank.reload()
+    expect(blank.locator("#c-tx")).to_be_visible()
+    expect(blank.locator("#safe")).to_be_hidden()
+    assert "left after spending" not in blank.locator("body").inner_text()
+
+
+def seed_year(server):
+    server.call("PUT", "/api/doc/settings/main", {"household": "H", "currency": "USD", "opening": 1000, "members": ["Amy", "Bo"], "fiscalYear": 2025})
+    for i, (d, a, c) in enumerate([("2025-01-10", -100, "Groceries"), ("2025-02-10", -200, "Dining"), ("2025-03-10", -50, "Groceries"), ("2025-03-11", 3000, "Income")]):
+        server.call("PUT", "/api/doc/transactions/y%d" % i, {"date": d, "desc": "Row %d" % i, "amount": a, "category": c, "who": ""})
+
+
+def test_YEAR01_every_screen_has_a_year_view(blank, empty_server):
+    seed_year(empty_server)
+    blank.reload()
+    go(blank, "overview")
+    blank.click('#period [data-id="year"]')
+    expect(blank.locator("#mlabel")).to_have_text("2025")
+    expect(blank.locator("#c-balance")).to_contain_text("Cash balance at the end of 2025")
+    expect(blank.locator("#c-balance")).to_contain_text("$3,650")                    # 1000 - 350 + 3000
+    expect(blank.locator("#c-balance .tile", has_text="Out")).to_contain_text("$350")
+    for view in ("payments", "bills", "budgets", "cards", "insights", "household", "accounts"):
+        go(blank, view)
+        expect(blank.locator("#mlabel")).to_have_text("2025")
+        expect(blank.locator("#view .card").first).to_be_visible()
+        assert blank.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth"), view
+    go(blank, "payments")
+    expect(blank.locator("#tx-count")).to_contain_text("4 entries")
+    go(blank, "bills")
+    expect(blank.locator("#c-due")).to_contain_text("Pick a single month")
+    go(blank, "insights")
+    expect(blank.locator("#heat")).to_contain_text("Mar")
+    expect(blank.locator("#c-trend")).to_contain_text("Groceries")
+    blank.click('#period [data-id="month"]')
+    expect(blank.locator("#mlabel")).to_have_text("March 2025")
+
+
+def test_YEAR02_year_nav_stays_inside_the_fiscal_year_and_is_remembered(blank, empty_server):
+    seed_year(empty_server)
+    blank.reload()
+    blank.click('#period [data-id="year"]')
+    expect(blank.locator("#prev")).to_be_disabled()
+    expect(blank.locator("#next")).to_be_disabled()
+    blank.reload()
+    expect(blank.locator("#mlabel")).to_have_text("2025")          # the choice survived a reload
+    assert empty_server.docs("settings")["main"]["prefs"]["period"] == "year"
+
+
+def test_PERSIST01_names_are_saved_in_the_data_file(page, server):
+    page.click("#btn-settings")
+    page.fill("#f-household", "The Test House")
+    page.fill("#f-members", "Una, Dos")
+    page.click("#dlg-ok")
+    expect(page.locator("#title")).to_have_text("The Test House")
+    s = server.docs("settings")["main"]
+    assert s["household"] == "The Test House" and s["members"] == ["Una", "Dos"]
+    page.reload()
+    expect(page.locator("#title")).to_have_text("The Test House")
+
+
+def seed_cards(server):
+    for i, (card, amt) in enumerate([("Visa", -40), ("Visa", -10), ("Store card", -25)]):
+        server.call("PUT", "/api/doc/transactions/c%d" % i, {"date": "2026-11-05", "desc": "Thing %d" % i, "amount": amt, "category": "Shopping", "who": "", "card": card})
+
+
+def test_CARD02_a_card_can_be_labelled_shared_or_given_to_a_person(blank, empty_server):
+    empty_server.call("PUT", "/api/doc/settings/main", {"household": "H", "currency": "USD", "opening": 0, "members": ["Una", "Dos"]})
+    seed_cards(empty_server)
+    blank.reload()
+    go(blank, "cards")
+    expect(blank.locator("#c-cdet")).to_contain_text("Shared")
+    assert blank.locator("#cowner option").all_inner_texts() == ["Shared", "Una", "Dos"]
+    blank.select_option("#cowner", "Una")
+    expect(blank.locator("#toast")).to_contain_text("Owner saved")
+    expect(blank.locator("#c-stack .vcard[data-act=cflip]")).to_contain_text("Una")
+    assert empty_server.docs("settings")["main"]["cardMeta"]["Visa"]["owner"] == "Una"
+    blank.reload()
+    go(blank, "cards")
+    expect(blank.locator("#c-clist .row", has_text="Visa")).to_contain_text("Una")
+
+
+def test_CARD03_limit_slider_saves_and_flags_overspend(blank, empty_server):
+    seed_cards(empty_server)
+    empty_server.call("PUT", "/api/doc/transactions/c9", {"date": "2026-11-06", "desc": "Big", "amount": -30, "category": "Shopping", "who": "", "card": "Visa"})
+    blank.reload()
+    go(blank, "cards")
+    expect(blank.locator("#c-cdet .pill.ok")).to_have_text("On track")
+    blank.locator("#lim").evaluate("e => { e.value = 50; e.dispatchEvent(new Event('input', {bubbles: true})); e.dispatchEvent(new Event('change', {bubbles: true})) }")
+    expect(blank.locator("#c-cdet .pill.bad")).to_have_text("Over limit")     # Visa spent $80 against a $50 limit
+    assert empty_server.docs("settings")["main"]["cardLimits"]["Visa"] == 50
+
+
+def test_SELECT01_every_dropdown_has_the_same_arrow_and_inset(page):
+    checks = """() => [...document.querySelectorAll('select')].map(s => { const c = getComputedStyle(s);
+        return [c.appearance, c.backgroundImage.startsWith('url'), c.backgroundPosition, c.backgroundRepeat, parseFloat(c.paddingRight)] })"""
+    go(page, "payments")
+    seen = page.evaluate(checks)
+    page.click("#btn-add")
+    seen += page.evaluate(checks)
+    page.click("#dlg-cancel")
+    assert len(seen) >= 4
+    assert all(row == seen[0] for row in seen), seen
+    assert seen[0][0] == "none" and seen[0][1] is True and seen[0][4] >= 30
+
+
+def test_SYNC01_sync_card_saves_its_settings(blank, empty_server):
+    go(blank, "accounts")
+    expect(blank.locator("#c-sync")).to_contain_text("Statement sync")
+    blank.fill("#sy-link", "https://drive.google.com/drive/folders/abc123")
+    blank.fill("#sy-every", "30")
+    blank.click('[data-act="save-sync"]')
+    expect(blank.locator("#toast")).to_contain_text("Sync settings saved")
+    sync = empty_server.docs("settings")["main"]["sync"]
+    assert sync["driveLink"].endswith("abc123") and sync["everyMinutes"] == 30
+
+
+def make_pdf(browser, path, body):
+    context = browser.new_context()
+    page = context.new_page()
+    page.set_content("<body style='font:12px sans-serif'>" + body + "</body>")
+    page.pdf(path=str(path))
+    context.close()
+
+
+def test_SYNC02_manual_sync_reads_a_pdf_and_adds_only_new_payments(browser, blank, empty_server, tmp_path):
+    pytest.importorskip("pypdf")
+    folder = tmp_path / "statements"
+    folder.mkdir()
+    make_pdf(browser, folder / "bofa.pdf",
+             "Bank of America Your Adv Plus Banking for November 13, 2025 to December 15, 2025 Account number: 1<br>"
+             "Deposits and other additions Date Description Amount<br>11/24/25 Payroll from ACME CO 2,500.00<br>Total deposits and other additions $2,500.00<br>"
+             "Withdrawals and other subtractions Date Description Amount<br>12/02/25 Zelle payment to A FRIEND -40.00<br>Total withdrawals and other subtractions -$40.00")
+    empty_server.call("PUT", "/api/doc/settings/main", {"household": "H", "currency": "USD", "opening": 0, "members": ["A"], "fiscalYear": 2025,
+                                                        "sync": {"localFolder": str(folder), "auto": False}})
+    blank.reload()
+    go(blank, "accounts")
+    blank.click('#c-sync [data-act="sync"]')
+    expect(blank.locator("#c-sync #sy-status")).to_contain_text("2 new payments", timeout=20000)
+    rows = [t for t in empty_server.docs("transactions").values() if t.get("source") == "pdf"]
+    assert sorted(t["amount"] for t in rows) == [-40.0, 2500.0] and all(t["cash"] for t in rows)
+    blank.click('#c-sync [data-act="sync"]')
+    expect(blank.locator("#c-sync #sy-status")).to_contain_text("0 new payments", timeout=20000)     # nothing is added twice
+    assert len([t for t in empty_server.docs("transactions").values() if t.get("source") == "pdf"]) == 2
+
+
+def test_SYNC03_sync_edge_cases_give_plain_messages(blank, empty_server, tmp_path):
+    base = {"household": "H", "currency": "USD", "opening": 0, "members": ["A"]}
+    go(blank, "accounts")
+    blank.click('#c-sync [data-act="sync"]')
+    expect(blank.locator("#c-sync #sy-status")).to_contain_text("Add a Google Drive folder link or a local folder", timeout=20000)
+    for sync, message in (({"localFolder": str(tmp_path / "nope")}, "does not exist"), ({"driveLink": "not a link"}, "does not look like a Google Drive folder link")):
+        empty_server.call("PUT", "/api/doc/settings/main", dict(base, sync=sync))
+        blank.reload()
+        go(blank, "accounts")
+        blank.click('#c-sync [data-act="sync"]')
+        expect(blank.locator("#c-sync #sy-status")).to_contain_text(message, timeout=20000)
+
+
+def test_SYNC04_a_damaged_pdf_is_reported_and_does_not_stop_the_rest(blank, empty_server, tmp_path):
+    pytest.importorskip("pypdf")
+    folder = tmp_path / "s"
+    folder.mkdir()
+    (folder / "broken.pdf").write_bytes(b"%PDF-1.4 this is not a pdf")
+    empty_server.call("PUT", "/api/doc/settings/main", {"household": "H", "currency": "USD", "opening": 0, "members": ["A"], "sync": {"localFolder": str(folder), "auto": False}})
+    blank.reload()
+    go(blank, "accounts")
+    blank.click('#c-sync [data-act="sync"]')
+    expect(blank.locator("#c-sync")).to_contain_text("broken.pdf", timeout=20000)
+
+
+# ---------------------------------------------------------------- phone to desktop, edge cases
+
+@pytest.mark.parametrize("width,height", [(320, 640), (375, 812), (768, 1024), (1024, 768), (1440, 900), (1920, 1080)])
+def test_FIT01_nothing_spills_sideways_on_any_screen_size(browser, server, width, height):
+    p = open_page(browser, server, viewport={"width": width, "height": height})
+    for view in ("overview", "cards", "payments", "bills", "budgets", "insights", "household", "accounts"):
+        go(p, view)
+        over = p.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+        assert over <= 0, (view, width, over)
+    p.click('#period [data-id="year"]')
+    for view in ("overview", "insights", "cards"):
+        go(p, view)
+        assert p.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth") <= 0, (view, width, "year")
+    p.context.close()
+
+
+def test_EDGE01_hostile_and_very_long_text_is_shown_as_text_and_does_not_break_the_layout(blank, empty_server):
+    empty_server.call("PUT", "/api/doc/settings/main", {"household": "<img src=x onerror=window.__pwned=1>", "currency": "USD", "opening": 0, "members": ["<b>Una</b>"]})
+    empty_server.call("PUT", "/api/doc/transactions/x", {"date": "2026-11-05", "desc": "<script>window.__pwned=1</script>" + "W" * 300, "amount": -5,
+                                                         "category": "Dining", "who": "", "card": "<i>Card</i>"})
+    blank.reload()
+    go(blank, "cards")
+    go(blank, "payments")
+    assert blank.evaluate("window.__pwned") is None
+    assert blank.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
+    expect(blank.locator("#title")).to_contain_text("<img src=x")
+
+
+def test_EDGE02_empty_data_in_year_view_does_not_error(blank):
+    errors = []
+    blank.on("pageerror", lambda e: errors.append(str(e)))
+    blank.click('#period [data-id="year"]')
+    for view in ("overview", "cards", "payments", "bills", "budgets", "insights", "household", "accounts"):
+        go(blank, view)
+        expect(blank.locator("#view .card").first).to_be_visible()
+    assert not errors, errors
+
+
+def test_EDGE03_keyboard_search_palette_opens_filters_and_navigates(page):
+    page.keyboard.press("Control+k")
+    expect(page.locator("#pal")).to_be_visible()
+    page.keyboard.type("budg")
+    page.keyboard.press("Enter")
+    expect(page.locator("#greet")).to_have_text("Budgets")
+    page.keyboard.press("Control+k")
+    page.keyboard.press("Escape")
+    expect(page.locator("#pal")).to_be_hidden()

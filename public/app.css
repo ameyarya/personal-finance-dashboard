@@ -344,7 +344,7 @@ dialog#pal{padding:0;width:min(580px,calc(100vw - 32px));margin:12vh auto 0;over
 .pal-i kbd{opacity:0;transition:opacity .15s}
 .pal-i.on{background:var(--glass2)}.pal-i.on kbd{opacity:1}
 @media (max-width:880px){.topbar{gap:8px}.topbar .btn.icon,.avatar{width:40px;height:40px}.search{height:40px}.search kbd,.vsep{display:none}.main{padding-top:12px}}
-@media (max-width:520px){#btn-send,#btn-theme{display:none}}
+
 
 /* sidebar divider spans the full height of the window, not just the sticky sidebar */
 .app{position:relative}
@@ -376,3 +376,18 @@ dialog#pal{padding:0;width:min(580px,calc(100vw - 32px));margin:12vh auto 0;over
 .row.cur{background:var(--glass2)}
 .row .amt .bar{margin-bottom:4px}
 .anim .vcard{animation:fadein .7s var(--ease) backwards}.anim .vcard:nth-child(2){animation-delay:.08s}.anim .vcard:nth-child(3){animation-delay:.16s}
+
+/* ---- dropdowns: one arrow, same inset, same size everywhere ---- */
+:root{--chev:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23b4c0d4' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")}
+:root[data-theme="light"]{--chev:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23475268' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")}
+select,.fld select,.toolbar select,.field select{-webkit-appearance:none;appearance:none;background-image:var(--chev);background-repeat:no-repeat;background-position:right 12px center;background-size:14px 14px;padding-right:36px;cursor:pointer;text-overflow:ellipsis}
+select::-ms-expand{display:none}
+
+.heat.months{grid-template-columns:repeat(4,minmax(0,1fr))}.heat.months div{aspect-ratio:auto;height:54px;max-height:none}
+.tools .seg button{padding:7px 13px}
+
+.vtop b{display:flex;flex-direction:column;gap:2px;font-weight:600}.vtop .own{font-weight:500;font-size:11px;opacity:.85;letter-spacing:.04em;text-transform:uppercase}
+
+@keyframes spin{to{transform:rotate(360deg)}}
+#btn-sync.spin svg{animation:spin 1s linear infinite}
+code{font:12px ui-monospace,Menlo,monospace;background:var(--glass2);border-radius:6px;padding:1px 5px}

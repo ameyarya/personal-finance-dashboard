@@ -23,8 +23,8 @@
     <div class="topbar">
       <button class="search" id="btn-search" data-act="palette" aria-label="Search payments, people, pages (Command K)"><span id="ic-search"></span><span class="ph">Search payments, people, pages</span><kbd id="kbd">⌘K</kbd></button>
       <button class="btn icon add" id="btn-add" data-act="add-tx" aria-label="Add payment" title="Add payment"></button>
-      <button class="btn icon" id="btn-send" data-act="send" aria-label="Move money to a pot" title="Move money to a pot"></button>
       <i class="vsep" aria-hidden="true"></i>
+      <button class="btn icon" id="btn-sync" data-act="sync" aria-label="Sync statements" title="Sync statements"></button>
       <button class="btn icon" id="btn-theme" data-act="theme" aria-label="Switch theme"></button>
       <button class="btn icon" id="btn-bell" data-act="bell" aria-label="Noticed" title="Noticed"></button>
       <button class="avatar" id="btn-settings" data-act="settings" aria-label="Settings" title="Settings"></button>
@@ -33,6 +33,7 @@
     <header class="top">
       <div><div class="date" id="date"></div><h1 id="greet">Household money</h1><p id="lede"></p></div>
       <div class="tools">
+        <div class="seg" id="period" role="group" aria-label="View"><button data-act="period" data-id="month" aria-pressed="true">Month</button><button data-act="period" data-id="year" aria-pressed="false">Year</button></div>
         <div class="monthnav"><button class="btn icon" id="prev" data-act="prev" aria-label="Previous month">‹</button><span id="mlabel"></span><button class="btn icon" id="next" data-act="next" aria-label="Next month">›</button></div>
       </div>
     </header>

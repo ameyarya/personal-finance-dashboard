@@ -27,15 +27,18 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import statements
+
 HERE = Path(__file__).resolve().parent
 PUBLIC = HERE / "public"
-COLLECTIONS = ("settings", "transactions", "budgets", "pots", "recurring", "accounts", "rules")
+COLLECTIONS = ("settings", "transactions", "budgets", "recurring", "accounts", "rules")
 ID_RE = re.compile(r"^[A-Za-z0-9_.~:@+-]{1,200}$")
 MAX_BODY = 8 * 1024 * 1024
 MIME = {".png": "image/png", ".ico": "image/svg+xml", ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
         ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml", ".json": "application/json"}
 
 lock = threading.RLock()
+SYNC = {"running": False}
 CFG = {}
 STORE = {}
 
@@ -100,9 +103,6 @@ def make_sample(now):
         "budgets": {k: {"limit": v, "sample": True} for k, v in
                     {"Groceries": 700, "Dining": 300, "Transport": 320, "Shopping": 250, "Fun": 180,
                      "Utilities": 280, "Health": 150}.items()},
-        "pots": {"s-emergency": {"name": "Emergency fund", "target": 15000, "saved": 9600, "sample": True},
-                 "s-trip": {"name": "Summer trip", "target": 3000, "saved": 1150, "sample": True},
-                 "s-laptop": {"name": "New laptop", "target": 1800, "saved": 1080, "sample": True}},
         "recurring": {rid: {"name": name, "amount": amount, "day": day, "category": cat, "sample": True}
                       for rid, name, amount, day, cat, who in RECURRING},
         "accounts": {}, "rules": {},
@@ -124,6 +124,7 @@ def load():
         store = json.loads(data_file().read_text("utf-8"))
     else:
         store = {"version": 0, "collections": {} if CFG["empty"] else make_sample(today())}
+    store.setdefault("sync", {})
     for name in COLLECTIONS:
         store["collections"].setdefault(name, {})
     return store
@@ -137,7 +138,9 @@ def persist():
 
 
 def public_store():
-    return {"version": STORE["version"], "collections": STORE["collections"]}
+    sync = {k: v for k, v in STORE.get("sync", {}).items() if k != "files"}
+    sync.update(running=SYNC["running"], rclone=bool(find_rclone()), pypdf=pypdf_available())
+    return {"version": STORE["version"], "collections": STORE["collections"], "sync": sync}
 
 
 # ---------------------------------------------------------------- categories
@@ -280,6 +283,174 @@ def import_csv(text, flip, dry):
             "columns": cols, "preview": preview, "imported": 0 if dry else len(fresh)}
 
 
+
+# ---------------------------------------------------------------- statement sync
+
+class SyncError(Exception):
+    pass
+
+
+def find_rclone():
+    """rclone is usually in Homebrew's folder, which a login service does not have on its PATH."""
+    return shutil.which("rclone", path=os.environ.get("PATH", "") + ":/opt/homebrew/bin:/usr/local/bin")
+
+
+def pypdf_available():
+    try:
+        import pypdf  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def sync_settings():
+    with lock:
+        main = STORE["collections"]["settings"].get("main", {})
+    cfg = dict(main.get("sync") or {})
+    cfg["fiscalYear"] = main.get("fiscalYear")
+    return cfg
+
+
+def drive_pull(cfg, dest):
+    """Copy the PDFs from a Google Drive folder with rclone. The folder id comes from the link; rclone holds the sign-in."""
+    link = (cfg.get("driveLink") or "").strip()
+    if not link:
+        return
+    m = re.search(r"/folders/([A-Za-z0-9_-]+)|[?&]id=([A-Za-z0-9_-]+)", link)
+    if not m:
+        raise SyncError("That does not look like a Google Drive folder link.")
+    folder = m.group(1) or m.group(2)
+    remote = (cfg.get("rcloneRemote") or "gdrive").strip()
+    rclone = find_rclone()
+    if not rclone:
+        raise SyncError("rclone is not installed. Install it (brew install rclone) or fill in a local folder instead.")
+    dest.mkdir(parents=True, exist_ok=True)
+    cmd = [rclone, "copy", "%s,root_folder_id=%s:" % (remote, folder), str(dest), "--include", "*.pdf", "--drive-acknowledge-abuse"]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=1200)
+    except subprocess.TimeoutExpired:
+        raise SyncError("Google Drive took too long to answer. It will try again at the next sync.")
+    if r.returncode:
+        err = (r.stderr or "").strip().splitlines()[-1:] or ["rclone failed"]
+        if "didn't find section" in r.stderr or "not found in config" in r.stderr:
+            raise SyncError("Sign in to Google Drive once: run  rclone config create %s drive scope=drive.readonly  and approve in the browser." % remote)
+        raise SyncError("Google Drive said: " + err[0][:200])
+
+
+def norm_key(date, amount, card):
+    return (date, round(abs(float(amount)), 2), card)
+
+
+def add_statement_rows(parsed, fiscal):
+    """Store rows from PDFs that the dashboard does not have yet. Returns (added, skipped_outside_year)."""
+    with lock:
+        docs = STORE["collections"]["transactions"]
+        have = {}
+        for t in docs.values():
+            k = norm_key(t.get("date", ""), t.get("amount", 0), t.get("card", ""))
+            have[k] = have.get(k, 0) + 1
+        added = skipped = 0
+        seen = {}
+        for r in parsed:
+            if fiscal and not r["date"].startswith(str(fiscal)):
+                skipped += 1
+                continue
+            k = norm_key(r["date"], r["amount"], r["card"])
+            if have.get(k, 0) > 0:
+                have[k] -= 1
+                continue
+            seen[k] = seen.get(k, 0) + 1
+            doc = {"date": r["date"], "desc": r["desc"], "amount": r["amount"], "card": r["card"], "who": "", "source": "pdf"}
+            if r.get("cash"):
+                doc["cash"] = True
+            cat = r.get("category")
+            if not cat:
+                cat = categorize(r["desc"], -abs(r["amount"]))
+                if r["amount"] > 0 and not r.get("cash"):
+                    doc["refund"] = True
+            doc["category"] = cat
+            docs["pdf-" + hashlib.sha1(("%s|%s|%s|%s|%d" % (r["date"], r["desc"], r["amount"], r["card"], seen[k])).encode()).hexdigest()[:16]] = doc
+            added += 1
+        return added, skipped
+
+
+def run_sync(force=False):
+    """One pass: pull from Drive, read every new or changed PDF, add what is missing. Safe to call from any thread."""
+    with lock:
+        if SYNC["running"]:
+            return
+        SYNC["running"] = True
+    status = {"lastRun": dt.datetime.now().isoformat(timespec="seconds"), "added": 0, "pdfs": 0, "unreadable": [], "message": "", "ok": True}
+    try:
+        cfg = sync_settings()
+        folders = []
+        if (cfg.get("driveLink") or "").strip():
+            dest = CFG["data"] / "statements"
+            drive_pull(cfg, dest)
+            folders.append(dest)
+        local = (cfg.get("localFolder") or "").strip()
+        if local:
+            p = Path(local).expanduser()
+            if not p.is_dir():
+                raise SyncError("The local folder %s does not exist." % local)
+            folders.append(p)
+        if not folders:
+            raise SyncError("Add a Google Drive folder link or a local folder first.")
+        if not pypdf_available():
+            raise SyncError("Reading PDFs needs pypdf. Install it with: pip install pypdf")
+        with lock:
+            seen_files = STORE["sync"].setdefault("files", {})
+        parsed, total = [], 0
+        for folder in folders:
+            for f in sorted(folder.rglob("*.pdf")):
+                total += 1
+                sig = "%d-%d" % (f.stat().st_size, int(f.stat().st_mtime))
+                if seen_files.get(str(f)) == sig and not force:
+                    continue
+                try:
+                    rows = statements.parse_pdf(f, f.parent.name)
+                except Exception as e:  # a damaged or protected file must not stop the rest
+                    status["unreadable"].append("%s (%s)" % (f.name, str(e)[:60]))
+                    continue
+                if rows is None:
+                    status["unreadable"].append("%s (layout not recognised)" % f.name)
+                else:
+                    parsed.extend(rows)
+                seen_files[str(f)] = sig
+        added, skipped = add_statement_rows(parsed, cfg.get("fiscalYear"))
+        status.update(added=added, pdfs=total)
+        status["message"] = "%d new payment%s from %d statement%s%s." % (added, "" if added == 1 else "s", total, "" if total == 1 else "s",
+                                                                          ("; %d outside FY%s skipped" % (skipped, cfg["fiscalYear"])) if skipped else "")
+    except SyncError as e:
+        status.update(ok=False, message=str(e))
+    except Exception as e:
+        status.update(ok=False, message="Sync failed: %s" % str(e)[:200])
+    finally:
+        with lock:
+            STORE["sync"].update(status)
+            SYNC["running"] = False
+            persist()
+
+
+def auto_sync():
+    """Check every minute whether a sync is due. It only runs while this computer is awake, which is the point."""
+    time.sleep(20)
+    while True:
+        try:
+            cfg = sync_settings()
+            if cfg.get("auto", True) and ((cfg.get("driveLink") or "").strip() or (cfg.get("localFolder") or "").strip()):
+                every = max(5, int(cfg.get("everyMinutes") or 60)) * 60
+                last = STORE.get("sync", {}).get("lastRun")
+                due = True
+                if last:
+                    due = (dt.datetime.now() - dt.datetime.fromisoformat(last)).total_seconds() >= every
+                if due:
+                    run_sync()
+        except Exception:
+            pass
+        time.sleep(60)
+
+
 # ---------------------------------------------------------------- HTTP
 
 class Handler(BaseHTTPRequestHandler):
@@ -372,6 +543,11 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if parts == ["api", "batch"]:
                 return self.batch(body)
+            if parts == ["api", "sync"]:
+                if SYNC["running"]:
+                    return self.send_json(200, {"running": True})
+                threading.Thread(target=run_sync, kwargs={"force": bool(body.get("force"))}, daemon=True).start()
+                return self.send_json(200, {"started": True})
             if parts == ["api", "import", "csv"]:
                 if not isinstance(body.get("text"), str) or not body["text"].strip():
                     return self.send_json(400, {"error": "The file is empty."})
@@ -487,6 +663,7 @@ def main():
     if not data_file().exists():
         with lock:
             persist()
+    threading.Thread(target=auto_sync, daemon=True).start()
     if args.name:
         threading.Thread(target=advertise, args=(args.name, args.port), daemon=True).start()
     scheme = "https" if args.cert and args.key else "http"

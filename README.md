@@ -25,6 +25,7 @@ page when you are ready to enter your own.
 - **Overview.** Joint balance, what is safe to spend after bills, and a forecast to the end of
   the month that marks each payday and bill.
 - **Cards.** One card face per card in your statements: tap to flip, spending by month, a monthly limit reminder.
+- **Year view.** Every page has a Month / Year switch next to the date arrows.
 - **Payments.** Add, edit, search, filter, delete with undo, import a bank statement, export.
 - **Bills.** Regular bills and paydays. Tick them off as they happen.
 - **Budgets.** A monthly limit per category, with a marker for where spending should be today.
@@ -59,6 +60,23 @@ data/data.json      everything you see on the page
 ```
 
 The `data/` folder is in `.gitignore`. Back up `data.json`, or use *Accounts → Download a backup*.
+
+## Statement PDFs
+
+*Accounts → Statement sync* reads PDF statements and adds any payments the dashboard does not have yet.
+Point it at a Google Drive folder link, a folder on the computer, or both. The server checks on its own
+(every hour by default, only while the computer is awake) and there is a **Sync now** button, also in the
+top bar.
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # pypdf reads the PDFs
+brew install rclone && rclone config create gdrive drive scope=drive.readonly   # only for Google Drive; sign in once
+.venv/bin/python server.py
+```
+
+PDFs are read on this computer. Wells Fargo cards, Bank of America accounts, Wealthfront cash accounts and
+Capital One year-end summaries have their own readers; other card statements go through a general one. Files
+that are not understood are listed on the page, never guessed at.
 
 ## HTTPS
 
