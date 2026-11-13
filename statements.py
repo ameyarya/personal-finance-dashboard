@@ -207,7 +207,28 @@ def parse_capital_one_monthly(text):
     return out
 
 
-PARSERS = (parse_wells_fargo, parse_bofa, parse_wealthfront, parse_capital_one_year_end, parse_capital_one_monthly, parse_amex)
+# ---------------------------------------------------------------- Chase checking account
+
+CHASE_ROW = re.compile(r"(\d\d)/(\d\d) (.+?) (-?%s) (-?%s)(?= \d\d/\d\d |\s*Ending Balance|$)" % (NUM, NUM))
+
+
+def parse_chase_checking(text):
+    if "CHECKING SUMMARY" not in text or "TRANSACTION DETAIL" not in text or "Chase" not in text:
+        return None
+    period = re.search(r"(\w+) (\d{1,2}), (\d{4}) through (\w+) (\d{1,2}), (\d{4})", text)
+    if not period or period.group(4)[:3] not in MONTHS:
+        return []
+    end = dt.date(int(period.group(6)), MONTHS[period.group(4)[:3]], int(period.group(5)))
+    body = text[text.find("TRANSACTION DETAIL"):]
+    body = (body[:body.find("Ending Balance")] if "Ending Balance" in body else body).rstrip()
+    out = []
+    for r in CHASE_ROW.finditer(body):
+        desc = re.sub(r"\s+(?:PPD|CTX|WEB)? ?ID: ?\d+| Web ID: \d+", "", r.group(3))
+        out.append(row(with_year(int(r.group(1)), int(r.group(2)), end), desc, money(r.group(4)), "Chase Checking", cash=True))
+    return out
+
+
+PARSERS = (parse_chase_checking, parse_wells_fargo, parse_bofa, parse_wealthfront, parse_capital_one_year_end, parse_capital_one_monthly, parse_amex)
 
 
 def parse_text(text, hint=""):
@@ -225,7 +246,7 @@ def finish(rows):
         if not r.get("cash") and PAYMENT.search(r["desc"]):
             r["category"] = "Transfer"
             r["amount"] = abs(r["amount"])
-        elif r.get("cash") and re.search(r"WEALTHFRONT|ALLY|APPLE GS|BANK OF AMERICA|TRANSFER|CREDIT CARD|CRCARDPMT|E-?PAYMENT", r["desc"], re.I) and "Personal Investment" not in r["desc"]:
+        elif r.get("cash") and re.search(r"WEALTHFRONT|ALLY|APPLE GS|BANK OF AMERICA|TRANSFER|CREDIT CARD|CREDIT CRD|AUTOPAY|ACH PMT|CRCARDPMT|E-?PAYMENT", r["desc"], re.I) and "Personal Investment" not in r["desc"]:
             r["category"] = "Transfer"
         elif "Personal Investment" in r["desc"]:
             r["category"] = "Savings"

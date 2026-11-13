@@ -17,11 +17,11 @@ def test_M01_edit_a_payment_then_delete_it_and_undo(page, server):
     row.click()
     page.fill("#f-desc", "Corner shop 2")
     page.click("#dlg-ok")
-    expect(page.locator("#toast")).to_contain_text("Payment updated")
+    expect(page.locator("#toast")).to_contain_text("Transaction updated")
     expect(page.locator("#tx-list .row", has_text="Corner shop 2")).to_be_visible()
     page.locator("#tx-list .row", has_text="Corner shop 2").click()
     page.click("#dlg-extra")
-    expect(page.locator("#toast")).to_contain_text("Payment deleted")
+    expect(page.locator("#toast")).to_contain_text("Transaction deleted")
     expect(page.locator("#tx-list .row", has_text="Corner shop 2")).to_have_count(0)
     page.click("#toast-undo")
     expect(page.locator("#tx-list .row", has_text="Corner shop 2")).to_be_visible()
@@ -73,7 +73,7 @@ def test_M05_search_box_filters_and_keeps_focus_while_typing(page):
     go(page, "payments")
     page.click("#q")
     page.keyboard.type("zzzz")
-    expect(page.locator("#tx-list")).to_contain_text("No payments match")
+    expect(page.locator("#tx-list")).to_contain_text("No transactions match")
     expect(page.locator("#q")).to_be_focused()
     page.fill("#q", "")
     page.select_option("#fcat", "Groceries")
@@ -233,36 +233,10 @@ def test_M15_overview_notices_page_through_with_the_arrows(page):
 CSV = "Date,Description,Amount\n2026-11-02,Test Shop,-12.50\n2026-11-03,Test Pay,100\nnot a date,Broken,xx\n"
 
 
-def test_M16_importing_a_csv_previews_flips_and_imports(page, server, tmp_path):
-    f = tmp_path / "s.csv"
-    f.write_text(CSV)
-    go(page, "accounts")
-    page.set_input_files("#csv-file", str(f))
-    expect(page.locator("#csv-summary")).to_contain_text("new payment")
-    page.check("#csv-flip")
-    expect(page.locator("#csv-summary")).to_contain_text("new payment")
-    page.uncheck("#csv-flip")
-    expect(page.locator("#csv-flip")).not_to_be_checked()
-    page.click("#dlg-ok")
-    expect(page.locator("#toast")).to_contain_text("Imported")
-    page.set_input_files("#csv-file", str(f))
-    expect(page.locator("#csv-summary")).to_contain_text("already here")
-    expect(page.locator("#dlg-ok")).to_be_disabled()
-    page.click("#dlg-cancel")
 
 
-def test_M17_a_csv_the_server_cannot_read_shows_its_message(page, tmp_path):
-    f = tmp_path / "bad.csv"
-    f.write_text("nothing,useful\n1,2\n")
-    go(page, "accounts")
-    page.set_input_files("#csv-file", str(f))
-    expect(page.locator("#toast")).to_be_visible()
 
 
-def test_M18_import_button_opens_the_file_chooser(page):
-    go(page, "accounts")
-    with page.expect_file_chooser():
-        page.click('[data-act="import-csv"]')
 
 
 # ---------------------------------------------------------------- accounts / sign-in with a named person
@@ -345,3 +319,70 @@ def test_M25_hash_change_switches_page_and_unknown_hash_goes_home(page):
     page.evaluate("location.hash='#nonsense'")
     page.evaluate("location.hash='#overview'")
     expect(page.locator("#chart svg")).to_be_visible()
+
+
+# ---------------------------------------------------------------- transactions: names, inline pickers, no import/export
+
+def test_M26_pages_say_transactions_and_have_no_import_or_export(page):
+    expect(page.locator('#nav button[data-id="payments"]')).to_contain_text("Transactions")
+    go(page, "payments")
+    expect(page.locator("#view h2")).to_contain_text("Transactions in")
+    expect(page.locator("#view")).not_to_contain_text("Import")
+    expect(page.locator("#view a[href*='export']")).to_have_count(0)
+    go(page, "accounts")
+    expect(page.locator("#view a[href*='export']")).to_have_count(0)
+    expect(page.locator('#view [data-act="import-csv"]')).to_have_count(0)
+    expect(page.locator('#view a[href*="backup"]')).to_have_count(1)
+    page.keyboard.press("Control+k")
+    page.fill("#pal-q", "import")
+    expect(page.locator("#pal-list")).to_contain_text("Nothing matches")
+    page.keyboard.press("Escape")
+
+
+def test_M27_each_row_has_category_and_person_dropdowns_that_save_without_opening_the_form(page, server):
+    go(page, "payments")
+    add_payment(page, "Pickme", 9, category="Groceries")
+    row = page.locator("#tx-list .row", has_text="Pickme")
+    row.locator('select[data-f="category"]').select_option("Dining")
+    expect(page.locator("#toast")).to_contain_text("Category saved")
+    row.locator('select[data-f="who"]').select_option("Sam")
+    expect(page.locator("#toast")).to_contain_text("Person saved")
+    expect(page.locator("#dlg")).not_to_have_attribute("open", "")                   # clicking a dropdown must not open the edit form
+    saved = next(t for t in server.docs("transactions").values() if t["desc"] == "Pickme")
+    assert saved["category"] == "Dining" and saved["who"] == "Sam"
+    row.locator('select[data-f="who"]').select_option("Shared")
+    expect(page.locator("#toast")).to_contain_text("Person saved")
+    saved = next(t for t in server.docs("transactions").values() if t["desc"] == "Pickme")
+    assert saved["who"] == ""
+
+
+def test_M28_a_person_who_is_no_longer_in_the_household_stays_selectable(page, server):
+    tid = "s-2026-11-rent"
+    t = dict(server.docs("transactions")[tid], who="Former")
+    assert server.call("PUT", "/api/doc/transactions/" + tid, t)[0] == 200
+    assert server.docs("transactions")[tid]["who"] == "Former"
+    page.reload()
+    go(page, "payments")
+    page.fill("#q", t["desc"])
+    expect(page.locator('#tx-list select[data-f="who"][data-id="%s"]' % tid)).to_have_value("Former")
+
+
+def test_M29_choosing_income_as_the_type_turns_a_payment_into_money_in_and_other_types_keep_the_sign(page, server):
+    go(page, "payments")
+    add_payment(page, "Typeflip", 25, category="Dining")
+    row = page.locator("#tx-list .row", has_text="Typeflip")
+    row.locator('select[data-f="category"]').select_option("Income")
+    expect(page.locator("#toast")).to_contain_text("Category saved")
+    saved = next(t for t in server.docs("transactions").values() if t["desc"] == "Typeflip")
+    assert saved["category"] == "Income" and saved["amount"] == 25
+    page.locator("#tx-list .row", has_text="Typeflip").locator('select[data-f="category"]').select_option("Transfer")
+    expect(page.locator("#toast")).to_contain_text("Category saved")
+
+
+def test_M30_a_dropdown_for_a_row_that_was_deleted_meanwhile_does_nothing(page, server):
+    go(page, "payments")
+    add_payment(page, "Vanish", 3)
+    tid = next(k for k, t in server.docs("transactions").items() if t["desc"] == "Vanish")
+    server.call("DELETE", "/api/doc/transactions/" + tid)
+    page.evaluate("document.querySelector('#tx-list select[data-f=category]').dispatchEvent(new Event('change',{bubbles:true}))")
+    page.keyboard.press("Tab")

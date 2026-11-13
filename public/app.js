@@ -21,7 +21,7 @@ const ICONS={grid:'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',swap:'M7 
 const ic=(n,col)=>'<svg class="ic" viewBox="0 0 24 24"'+(col?' style="color:var(--'+col+')"':'')+' aria-hidden="true"><path d="'+(ICONS[n]||ICONS.dots)+'"/></svg>';
 const catIco=(c,col)=>{const m=CATMETA[c]||CATMETA.Other;return '<span class="ico">'+ic(m[0],col||m[1])+'</span>'};
 const MAIN_TABS=4;
-const VIEWS=[['overview','Overview','grid'],['cards','Cards','card'],['payments','Payments','swap'],['bills','Bills','cal'],['budgets','Budgets','pie'],['insights','Insights','chart'],['household','Household','users'],['accounts','Accounts','bank']];
+const VIEWS=[['overview','Overview','grid'],['cards','Cards','card'],['payments','Transactions','swap'],['bills','Bills','cal'],['budgets','Budgets','pie'],['insights','Insights','chart'],['household','Household','users'],['accounts','Accounts','bank']];
 const LOCALE={USD:'en-US',EUR:'en-IE',GBP:'en-GB',CAD:'en-CA',AUD:'en-AU',INR:'en-IN',SGD:'en-SG',AED:'en-AE',JPY:'ja-JP',MXN:'es-MX'};
 const DEF={household:'Our household',currency:'USD',opening:0,members:['You','Partner']};
 const pad=n=>String(n).padStart(2,'0');
@@ -87,13 +87,13 @@ function notices(m){
   const n=[],yr=isYear(m.mo),prev=yr?{mtx:[],mo:m.mo}:monthData(shift(m.mo,-1)),sp=spendByCat(m.mtx),mult=yr?12:1;
   if(m.cur){
     const before=outOf(prev.mtx.filter(t=>+t.date.slice(8)<=m.last));
-    if(before>0&&m.out>0){const p=Math.round((m.out-before)/before*100);n.push({i:'swap',t:'Spending is '+(p>=0?'up ':'down ')+Math.abs(p)+'%',b:fmt(m.out)+' so far against '+fmt(before)+' by this day in '+mLong(prev.mo)+'.',v:'payments',a:'See payments'})}
+    if(before>0&&m.out>0){const p=Math.round((m.out-before)/before*100);n.push({i:'swap',t:'Spending is '+(p>=0?'up ':'down ')+Math.abs(p)+'%',b:fmt(m.out)+' so far against '+fmt(before)+' by this day in '+mLong(prev.mo)+'.',v:'payments',a:'See transactions'})}
     const due=m.items.filter(i=>!i.paid&&i.amount<0);
     if(due.length)n.push({i:'cal',t:plural(due.length,'bill')+' still to pay',b:fmt(m.unpaidOut)+' goes out before the '+ord(m.N)+'. Next is '+esc(due[0].name)+' on the '+ord(due[0].due)+'.',v:'bills',a:'See bills'});
   }
   Object.keys(S.budgets).forEach(k=>{const l=(S.budgets[k].limit||0)*mult;if(l&&sp[k]>l)n.push({i:(CATMETA[k]||CATMETA.Other)[0],t:esc(k)+' is over budget',b:fmt(sp[k])+' spent against a budget of '+fmt(l)+', over by '+fmt(sp[k]-l)+'.',v:'budgets',a:'See budgets'})});
   const un=m.mtx.filter(t=>t.amount<0&&(t.category||'Other')==='Other').length;
-  if(un>=5)n.push({i:'tag',t:plural(un,'payment')+' with no category',b:'Open a payment to pick a category. Tick the box to remember it for next time.',v:'payments',a:'See payments'});
+  if(un>=5)n.push({i:'tag',t:plural(un,'transaction')+' with no category',b:'Open a transaction to pick a category. Tick the box to remember it for next time.',v:'payments',a:'See transactions'});
   return n;
 }
 
@@ -173,10 +173,10 @@ function balanceCard(m){
     tiles=[['Today',outOf(S.tx.filter(t=>t.date===TODAY))],['This week',outOf(S.tx.filter(t=>t.date>=wk&&t.date<=TODAY))],['This month',m.out],['This year',outOf(S.tx.filter(t=>t.date.startsWith(yr)))]];
     const pm=shift(YM,-1),cut=pm+'-'+pad(Math.min(m.last,daysIn(pm))),was=currentBalance()-sum(cashOnly(S.tx.filter(t=>t.date>cut)),t=>+t.amount||0);
     if(was){const p=Math.round((m.bal-was)/Math.abs(was)*100);chg='<div class="sub" style="margin-top:6px"><span class="pill '+(p>=0?'ok':'warn')+'">'+(p>=0?'↑ ':'↓ ')+Math.abs(p)+'%</span> against a month ago</div>'}
-  } else tiles=[['In',m.inc],['Out',m.out],['Kept',m.inc-m.out],isYear(m.mo)?['Payments',m.mtx.length]:['Bills paid',m.items.filter(i=>i.paid&&i.amount<0).length]];
+  } else tiles=[['In',m.inc],['Out',m.out],['Kept',m.inc-m.out],isYear(m.mo)?['Transactions',m.mtx.length]:['Bills paid',m.items.filter(i=>i.paid&&i.amount<0).length]];
   const end=m.fc.length?m.fc[m.fc.length-1].v:null;
   return '<div class="head"><div><h2>'+(S.settings&&S.settings.fiscalYear?'Cash balance at the end of '+mLong(m.mo):m.cur?'Joint balance':'Balance at the end of '+mLong(m.mo))+'</h2><small>'+(S.settings&&S.settings.fiscalYear?'Wealthfront Cash and Bank of America':m.cur?'Spent, by period':mName(m.mo))+'</small></div></div>'+
-   '<div class="balrow"><div><div class="big" id="balance" data-n="'+m.bal+'">'+fmt(m.bal)+'</div>'+chg+'</div><div class="tiles">'+tiles.map(t=>'<div class="tile"><span>'+t[0]+'</span><b'+(t[0]==='Bills paid'||t[0]==='Payments'?'>'+t[1]:' data-n="'+t[1]+'">'+fmt(t[1]))+'</b></div>').join('')+'</div></div>'+
+   '<div class="balrow"><div><div class="big" id="balance" data-n="'+m.bal+'">'+fmt(m.bal)+'</div>'+chg+'</div><div class="tiles">'+tiles.map(t=>'<div class="tile"><span>'+t[0]+'</span><b'+(t[0]==='Bills paid'||t[0]==='Transactions'?'>'+t[1]:' data-n="'+t[1]+'">'+fmt(t[1]))+'</b></div>').join('')+'</div></div>'+
    '<div id="chart"></div>'+
    '<div class="legend"><span><i class="lg-line"></i>Balance</span>'+(m.fc.length?'<span><i class="lg-dot"></i>Forecast</span><span><i class="lg-pt" style="background:var(--accent)"></i>Payday</span><span><i class="lg-pt" style="background:var(--out)"></i>Bill</span><span class="end">'+mShort(m.mo)+' '+m.N+'<b id="month-end" data-n="'+end+'">'+fmt(end)+'</b></span>':'')+'</div>';
 }
@@ -234,18 +234,23 @@ function catsCard(m){
 function filtered(m){const q=S.q.trim().toLowerCase();
   return m.mtx.filter(t=>(!S.fcat||(isInc(t)?'Income':t.category||'Other')===S.fcat)&&(!q||((t.desc||'')+' '+(t.category||'')+' '+(t.who||'')).toLowerCase().includes(q)))
     .sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:(a.id<b.id?1:-1))}
+function rowPickers(t,cat){
+  const c=cfg(),cats=CATS.concat('Income'),who=t.who||'',people=['Shared'].concat(c.members);if(who&&!c.members.includes(who))people.push(who);
+  if(!cats.includes(cat))cats.push(cat);
+  const sel=(f,list,cur,label)=>'<select class="rs" data-f="'+f+'" data-id="'+esc(t.id)+'" aria-label="'+label+' for '+esc(t.desc||'transaction')+'">'+list.map(o=>'<option'+(o===cur?' selected':'')+'>'+esc(o)+'</option>').join('')+'</select>';
+  return '<div class="rowctl">'+sel('category',cats,cat,'Category')+sel('who',people,who||'Shared','Person')+'</div>'}
 function txRows(list,full){
-  if(!list.length)return '<div class="empty">'+(S.q||S.fcat?'No payments match.':'No payments recorded for '+mLong(curMo())+'. Use Add payment to enter the first one, or import a statement.')+'</div>';
+  if(!list.length)return '<div class="empty">'+(S.q||S.fcat?'No transactions match.':'No transactions recorded for '+mLong(curMo())+'. Use Add transaction to enter the first one, or sync your statements.')+'</div>';
   return '<div class="list">'+list.map(t=>{const dd=dayDiff(TODAY,t.date),when=dd===0?'Today':dd===1?'Yesterday':shortDate(t.date),cat=isInc(t)?'Income':(t.category||'Other');
-    return '<div class="row'+(full?' click" data-act="edit-tx" data-id="'+esc(t.id)+'" tabindex="0" role="button':'')+'">'+catIco(cat)+'<div class="t"><b>'+esc(t.desc||'Payment')+'</b><small>'+when+' · '+esc(cat)+(t.who?' · '+esc(t.who):'')+(t.card?' · '+esc(t.card):'')+(t.refund?' · refund':'')+(t.note?' · '+esc(t.note):'')+'</small></div><div class="amt '+(t.amount>0?'in':'')+'">'+(t.amount>0?'+':'−')+fmt(Math.abs(t.amount))+'</div><div class="acts">'+(full?'<button class="x" data-act="del-tx" data-id="'+esc(t.id)+'" aria-label="Delete '+esc(t.desc||'payment')+'">×</button>':'')+'</div></div>'}).join('')+'</div>';
+    return '<div class="row'+(full?' click" data-act="edit-tx" data-id="'+esc(t.id)+'" tabindex="0" role="button':'')+'">'+catIco(cat)+'<div class="t"><b>'+esc(t.desc||'Transaction')+'</b><small>'+when+(full?'':' · '+esc(cat)+(t.who?' · '+esc(t.who):''))+(t.card?' · '+esc(t.card):'')+(t.refund?' · refund':'')+(t.note?' · '+esc(t.note):'')+'</small>'+(full?rowPickers(t,cat):'')+'</div><div class="amt '+(t.amount>0?'in':'')+'">'+(t.amount>0?'+':'−')+fmt(Math.abs(t.amount))+'</div><div class="acts">'+(full?'<button class="x" data-act="del-tx" data-id="'+esc(t.id)+'" aria-label="Delete '+esc(t.desc||'transaction')+'">×</button>':'')+'</div></div>'}).join('')+'</div>';
 }
 function txCard(m,limit){
   if(limit){const list=m.mtx.slice().sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:0);
-    return '<div class="head"><div><h2>Latest payments</h2><small>Everyone, every account</small></div><button class="link" data-act="view" data-id="payments">See all</button></div>'+txRows(list.slice(0,limit),false)}
+    return '<div class="head"><div><h2>Latest transactions</h2><small>Everyone, every account</small></div><button class="link" data-act="view" data-id="payments">See all</button></div>'+txRows(list.slice(0,limit),false)}
   const list=filtered(m);
-  return '<div class="head"><div><h2>Payments in '+mLong(m.mo)+'</h2><small id="tx-count">'+plural(list.length,'entry','entries')+' · in '+fmt(incOf(list))+' · out '+fmt(outOf(list))+'</small></div></div>'+
-   '<div class="toolbar"><input type="search" id="q" placeholder="Search payments" aria-label="Search payments" value="'+esc(S.q)+'"><select id="fcat" aria-label="Category"><option value="">All categories</option>'+CATS.concat('Income').map(c=>'<option'+(c===S.fcat?' selected':'')+'>'+c+'</option>').join('')+'</select>'+
-   '<button class="btn" data-act="import-csv">'+ic('upload')+'Import CSV</button><a class="btn" href="api/export.csv" download="payments.csv">'+ic('download')+'Export</a></div>'+
+  return '<div class="head"><div><h2>Transactions in '+mLong(m.mo)+'</h2><small id="tx-count">'+plural(list.length,'entry','entries')+' · in '+fmt(incOf(list))+' · out '+fmt(outOf(list))+'</small></div></div>'+
+   '<div class="toolbar"><input type="search" id="q" placeholder="Search transactions" aria-label="Search transactions" value="'+esc(S.q)+'"><select id="fcat" aria-label="Category"><option value="">All categories</option>'+CATS.concat('Income').map(c=>'<option'+(c===S.fcat?' selected':'')+'>'+c+'</option>').join('')+'</select>'+
+   '</div>'+
    '<div id="tx-list">'+txRows(list,true)+'</div>';
 }
 function refreshTx(){if(!$('tx-list'))return;const m=monthData(curMo()),list=filtered(m);$('tx-list').innerHTML=txRows(list,true);$('tx-count').textContent=plural(list.length,'entry','entries')+' · in '+fmt(incOf(list))+' · out '+fmt(outOf(list))}
@@ -286,7 +291,7 @@ function budgetsCard(m){
 function houseCard(m,c){
   const by={},inc={};flows(m.mtx).forEach(t=>{const k=t.who||'Shared';if(t.amount<0)by[k]=(by[k]||0)-t.amount;else if(!t.refund)inc[k]=(inc[k]||0)+ +t.amount});
   const names=Array.from(new Set(c.members.concat(Object.keys(by),Object.keys(inc)))),mx=Math.max.apply(0,names.map(n=>by[n]||0))||1;
-  return '<div class="head"><div><h2>Who spent what</h2><small>'+mName(m.mo)+' · Shared covers payments with no person set</small></div></div><div>'+
+  return '<div class="head"><div><h2>Who spent what</h2><small>'+mName(m.mo)+' · Shared covers transactions with no person set</small></div></div><div>'+
    names.map(n=>'<div class="cat"><div class="l"><b style="display:flex;gap:10px;align-items:center"><span class="av">'+esc(n.split(/\s+/).map(s=>s[0]).join('').slice(0,2).toUpperCase())+'</span>'+esc(n)+'</b><span>'+(inc[n]?'brought in '+fmt(inc[n])+' · ':'')+'spent '+fmt(by[n]||0)+'</span></div><div class="bar"><i style="width:'+((by[n]||0)/mx*100).toFixed(1)+'%"></i></div></div>').join('')+'</div>';
 }
 
@@ -322,7 +327,7 @@ function trendCard(m){
 }
 function biggestCard(m){
   const list=flows(m.mtx).filter(t=>t.amount<0).sort((a,b)=>a.amount-b.amount).slice(0,6);
-  return '<div class="head"><div><h2>Biggest payments</h2><small>'+mName(m.mo)+'</small></div></div>'+(list.length?txRows(list,false):'<div class="empty">Nothing spent yet.</div>');
+  return '<div class="head"><div><h2>Biggest transactions</h2><small>'+mName(m.mo)+'</small></div></div>'+(list.length?txRows(list,false):'<div class="empty">Nothing spent yet.</div>');
 }
 
 
@@ -346,14 +351,14 @@ function cardsRefresh(){const st=$('cstack');if(S.view!=='cards'||!st){return re
   [['c-cdet',cardDetail],['c-clist',cardsList],['c-cpay',cardPays]].forEach(([id,f])=>{const el=$(id);if(el)el.innerHTML=f(m)});}
 function cardStack(m){
   const cs=cardList(m);
-  if(!cs.length)return '<div class="head"><div><h2>Cards</h2><small>Every card in your statements</small></div></div><div class="empty">No card payments yet. Statements you import show up here, one card each.</div>';
+  if(!cs.length)return '<div class="head"><div><h2>Cards</h2><small>Every card in your statements</small></div></div><div class="empty">No card transactions yet. Statements you import show up here, one card each.</div>';
   const n=cs.length,sel=((S.cardIdx%n)+n)%n,c=cs[sel];
   const face=cs.map((x,i)=>{const pos=(i-sel+n)%n;
     const recent=x.all.slice().sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:0).slice(0,4);
     return '<div class="vcard'+(pos===0&&S.flip?' flip':'')+'" data-act="'+(pos===0?'cflip':'csel')+'" data-id="'+i+'" tabindex="0" role="button" aria-label="'+esc(x.name)+'" style="'+vstyle(pos)+';--a:'+x.face[0]+';--b:'+x.face[1]+'"><div class="inner">'+
       '<div class="face front"><div class="vtop"><b>'+esc(x.name)+'<small class="own">'+esc(x.owner)+'</small></b><span class="nfc">'+ic('spark')+'</span></div><span class="chip"></span>'+
       '<div class="vbot"><div><small>Spent in '+mShort(m.mo)+'</small><b>'+fmt(x.spent)+'</b></div><div><small>This year</small><b>'+fmt(x.total,true)+'</b></div></div></div>'+
-      '<div class="face back"><b>'+esc(x.name)+' · recent</b>'+(recent.length?recent.map(t=>'<div class="vrow"><span><i>'+esc(shortDate(t.date))+'</i>'+esc(t.desc||'Payment')+'</span><span>'+(t.amount>0?'+':'−')+fmt(Math.abs(t.amount))+'</span></div>').join(''):'<div class="vrow"><span>No payments yet</span></div>')+'<small>Tap to flip back · swipe for the next card</small></div></div></div>'}).join('');
+      '<div class="face back"><b>'+esc(x.name)+' · recent</b>'+(recent.length?recent.map(t=>'<div class="vrow"><span><i>'+esc(shortDate(t.date))+'</i>'+esc(t.desc||'Transaction')+'</span><span>'+(t.amount>0?'+':'−')+fmt(Math.abs(t.amount))+'</span></div>').join(''):'<div class="vrow"><span>No transactions yet</span></div>')+'<small>Tap to flip back · swipe for the next card</small></div></div></div>'}).join('');
   return '<div class="head"><div><h2>Cards</h2><small>Tap the front card to flip it, tap the ones behind to bring them forward</small></div></div>'+
    '<div class="cstack" id="cstack">'+face+'</div>'+
    '<div class="cnav"><button class="btn icon" data-act="cnext" data-id="-1" aria-label="Previous card">‹</button><div class="dots">'+cs.map((_,i)=>'<i'+(i===sel?' class="on"':'')+'></i>').join('')+'</div><button class="btn icon" data-act="cnext" data-id="1" aria-label="Next card">›</button></div>';
@@ -361,21 +366,21 @@ function cardStack(m){
 function cardDetail(m){
   const cs=cardList(m);if(!cs.length)return '<div class="head"><h2>Card details</h2></div><div class="empty">Nothing to show yet.</div>';
   const c=cs[((S.cardIdx%cs.length)+cs.length)%cs.length],left=c.limit?c.limit-c.spent:null,r=c.limit?Math.min(c.spent/c.limit,1):0;
-  return '<div class="head"><div><h2>'+esc(c.name)+'</h2><small>'+esc(c.owner)+' · '+plural(c.n,'payment')+' in this year\'s statements</small></div>'+(c.limit&&c.spent>c.limit?'<span class="pill bad">Over limit</span>':'<span class="pill ok">On track</span>')+'</div>'+
+  return '<div class="head"><div><h2>'+esc(c.name)+'</h2><small>'+esc(c.owner)+' · '+plural(c.n,'transaction')+' in this year\'s statements</small></div>'+(c.limit&&c.spent>c.limit?'<span class="pill bad">Over limit</span>':'<span class="pill ok">On track</span>')+'</div>'+
    '<div class="tiles2"><div class="tile"><span>Spent in '+mLong(m.mo)+'</span><b>'+fmt(c.spent)+'</b></div><div class="tile"><span>'+(c.limit?'Left this month':'Average month')+'</span><b>'+fmt(c.limit?left:c.avg)+'</b></div></div>'+
-   '<div class="tiles2"><div class="tile"><span>This year</span><b>'+fmt(c.total)+'</b></div><div class="tile"><span>Biggest payment</span><b>'+(c.big?fmt(-c.big.amount):'—')+'</b></div></div>'+
+   '<div class="tiles2"><div class="tile"><span>This year</span><b>'+fmt(c.total)+'</b></div><div class="tile"><span>Biggest transaction</span><b>'+(c.big?fmt(-c.big.amount):'—')+'</b></div></div>'+
    '<div class="fld"><label for="cowner">Owner</label><select id="cowner" data-card="'+esc(c.name)+'">'+(function(){const o=['Shared'].concat(cfg().members);if(o.indexOf(c.owner)<0)o.push(c.owner);return o})().map(o=>'<option'+(o===c.owner?' selected':'')+'>'+esc(o)+'</option>').join('')+'</select></div>'+
    '<div class="cat"><div class="l"><b>Monthly limit</b><span id="lim-out" class="in">'+(c.limit?fmt(c.limit):'None set')+'</span></div><input type="range" class="range" id="lim" data-card="'+esc(c.name)+'" min="0" max="10000" step="50" value="'+c.limit+'" aria-label="Monthly limit for '+esc(c.name)+'"><div class="bar'+(c.limit&&c.spent>c.limit?' over':'')+'"><i style="width:'+(r*100).toFixed(1)+'%"></i></div><small class="sub">A reminder only. It does not change anything with your bank.</small></div>';
 }
 function cardsList(m){
   const cs=cardList(m),sel=cs.length?((S.cardIdx%cs.length)+cs.length)%cs.length:0,mx=Math.max.apply(0,cs.map(c=>c.limit||c.spent))||1;
   return '<div class="head"><div><h2>All cards</h2><small>How far into the month each one is</small></div></div>'+(cs.length?'<div class="list">'+cs.map((c,i)=>
-   '<div class="row click'+(i===sel?' cur':'')+'" data-act="csel" data-id="'+i+'" tabindex="0" role="button"><span class="mini" style="--a:'+c.face[0]+';--b:'+c.face[1]+'"></span><div class="t"><b>'+esc(c.name)+'</b><small>'+esc(c.owner)+' · '+plural(c.mo.length,'payment')+' in '+mShort(m.mo)+'</small></div><div class="amt" style="min-width:150px"><div class="bar"><i style="width:'+Math.min(c.spent/mx*100,100).toFixed(1)+'%"></i></div><small class="sub">'+fmt(c.spent)+(c.limit?' of '+fmt(c.limit):'')+'</small></div><div></div></div>').join('')+'</div>':'<div class="empty">No cards yet.</div>');
+   '<div class="row click'+(i===sel?' cur':'')+'" data-act="csel" data-id="'+i+'" tabindex="0" role="button"><span class="mini" style="--a:'+c.face[0]+';--b:'+c.face[1]+'"></span><div class="t"><b>'+esc(c.name)+'</b><small>'+esc(c.owner)+' · '+plural(c.mo.length,'transaction')+' in '+mShort(m.mo)+'</small></div><div class="amt" style="min-width:150px"><div class="bar"><i style="width:'+Math.min(c.spent/mx*100,100).toFixed(1)+'%"></i></div><small class="sub">'+fmt(c.spent)+(c.limit?' of '+fmt(c.limit):'')+'</small></div><div></div></div>').join('')+'</div>':'<div class="empty">No cards yet.</div>');
 }
 function cardPays(m){
-  const cs=cardList(m);if(!cs.length)return '<div class="head"><h2>Latest on this card</h2></div><div class="empty">No payments yet.</div>';
+  const cs=cardList(m);if(!cs.length)return '<div class="head"><h2>Latest on this card</h2></div><div class="empty">No transactions yet.</div>';
   const c=cs[((S.cardIdx%cs.length)+cs.length)%cs.length],list=(c.mo.length?c.mo:c.all).slice().sort((a,b)=>a.date<b.date?1:-1).slice(0,8);
-  return '<div class="head"><div><h2>'+esc(c.name)+' payments</h2><small>The latest '+(c.mo.length?'in '+mLong(m.mo):'on this card')+'</small></div><button class="link" data-act="view" data-id="payments">All activity</button></div>'+txRows(list,false);
+  return '<div class="head"><div><h2>'+esc(c.name)+' transactions</h2><small>The latest '+(c.mo.length?'in '+mLong(m.mo):'on this card')+'</small></div><button class="link" data-act="view" data-id="payments">All activity</button></div>'+txRows(list,false);
 }
 
 /* ---------- accounts and data ---------- */
@@ -383,17 +388,17 @@ function sourcesCard(){
   const by={};S.txRaw.forEach(t=>{const k=t.card||'Entered by hand',o=by[k]||(by[k]={n:0,out:0,inn:0,from:'9999',to:''});o.n++;if(t.category!=='Transfer'){if(t.amount<0)o.out-=t.amount;else if(isInc(t))o.inn+=t.amount}if(t.date<o.from)o.from=t.date;if(t.date>o.to)o.to=t.date});
   const ks=Object.keys(by).sort((a,b)=>by[b].n-by[a].n);
   const yrs=Array.from(new Set(S.txRaw.filter(t=>t.date).map(t=>t.date.slice(0,4)))).sort();
-  let h='<div class="head"><div><h2>Where the figures come from</h2><small>'+(yrs.length?yrs[0]+(yrs.length>1?'–'+yrs[yrs.length-1]:'')+' · ':'')+plural(S.txRaw.length,'payment')+'</small></div></div>';
+  let h='<div class="head"><div><h2>Where the figures come from</h2><small>'+(yrs.length?yrs[0]+(yrs.length>1?'–'+yrs[yrs.length-1]:'')+' · ':'')+plural(S.txRaw.length,'transaction')+'</small></div></div>';
   if(!ks.length)return h+'<div class="empty">Nothing loaded yet. Import a statement below, or run tools/import_statements.py.</div>';
   return h+'<div class="list">'+ks.map(k=>{const o=by[k];return '<div class="row"><span class="ico">'+ic('bank')+'</span><div class="t"><b>'+esc(k)+'</b><small>'+plural(o.n,'entry','entries')+' · '+shortDate(o.from)+' to '+shortDate(o.to)+'</small></div><div class="amt">'+(o.out?'−'+fmt(o.out):'')+'</div><div class="pct">'+(o.inn?'+'+fmt(o.inn):'')+'</div></div>'}).join('')+'</div>';
 }
 function syncCard(){
   const y=S.settings&&S.settings.sync||{},st=S.sync||{},when=st.lastRun?new Date(st.lastRun).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'';
   const warn=[];if(!st.pypdf)warn.push('Reading PDFs needs <b>pypdf</b>: <code>pip install pypdf</code>.');
-  return '<div class="head"><div><h2>Statement sync</h2><small>Reads the PDF statements in a folder and adds any payments that are missing</small></div><div class="toolbar"><button class="link" data-act="sl-open">View log</button><button class="btn primary sm" data-act="sync"'+(st.running?' disabled':'')+'>'+(st.running?'Syncing…':'Sync now')+'</button></div></div>'+
+  return '<div class="head"><div><h2>Statement sync</h2><small>Reads the PDF statements in a folder and adds any transactions that are missing</small></div><div class="toolbar"><button class="link" data-act="sl-open">View log</button><button class="btn primary sm" data-act="sync"'+(st.running?' disabled':'')+'>'+(st.running?'Syncing…':'Sync now')+'</button></div></div>'+
    (warn.length?'<div class="hint">'+ic('info','accent')+'<span>'+warn.join(' ')+'</span></div>':'')+
    '<div class="fld"><label for="sy-local">Statements folder on this Mac</label><div class="pick"><input id="sy-local" placeholder="/Users/you/Statements" spellcheck="false" value="'+esc(y.localFolder||'')+'"><button class="btn" data-act="pick-local">Choose…</button></div></div>'+
-   '<div class="two"><div class="fld"><label for="sy-from">Keep payments from year</label><input id="sy-from" type="number" min="1990" max="2100" placeholder="earliest" value="'+esc(y.fromYear||'')+'"></div><div class="fld"><label for="sy-to">to year</label><input id="sy-to" type="number" min="1990" max="2100" placeholder="latest" value="'+esc(y.toYear||'')+'"></div></div>'+
+   '<div class="two"><div class="fld"><label for="sy-from">Keep transactions from year</label><input id="sy-from" type="number" min="1990" max="2100" placeholder="earliest" value="'+esc(y.fromYear||'')+'"></div><div class="fld"><label for="sy-to">to year</label><input id="sy-to" type="number" min="1990" max="2100" placeholder="latest" value="'+esc(y.toYear||'')+'"></div></div>'+
    '<div class="two"><div class="fld"><label for="sy-every">Check every (minutes)</label><input id="sy-every" type="number" min="5" step="5" value="'+esc(y.everyMinutes||60)+'"></div></div>'+
    '<label class="check"><input type="checkbox" id="sy-auto"'+(y.auto===false?'':' checked')+'>Check automatically while this computer is awake</label>'+
    '<div class="toolbar"><button class="btn" data-act="save-sync">Save</button></div>'+
@@ -402,8 +407,8 @@ function syncCard(){
 }
 function dataCard(){
   return '<div class="head"><div><h2>Your data</h2><small>Everything is kept in one file, data/data.json, on the computer running this page. Nothing is sent anywhere else.</small></div></div>'+
-   '<div class="toolbar"><button class="btn" data-act="import-csv">'+ic('upload')+'Import a bank statement (CSV)</button><a class="btn" href="api/export.csv" download="payments.csv">'+ic('download')+'Export payments</a><a class="btn" href="api/backup.json" download="finance-backup.json">'+ic('download')+'Download a backup</a></div>'+
-   '<div class="sub">'+plural(S.txRaw.length,'payment')+' · '+plural(S.rules.length,'category rule')+' remembered'+(S.rules.length?' <button class="link" data-act="rules">Review</button>':'')+'</div>';
+   '<div class="toolbar"><a class="btn" href="api/backup.json" download="finance-backup.json">'+ic('download')+'Download a backup</a></div>'+
+   '<div class="sub">'+plural(S.txRaw.length,'transaction')+' · '+plural(S.rules.length,'category rule')+' remembered'+(S.rules.length?' <button class="link" data-act="rules">Review</button>':'')+'</div>';
 }
 
 /* ---------- live sync window ---------- */
@@ -465,12 +470,12 @@ window.addEventListener('resize',()=>{if(window.innerWidth>880)closeMore()});
 let palSel=0,palItems=[];
 function palList(q){q=q.trim().toLowerCase();const out=[];
   VIEWS.forEach(v=>out.push({g:'Pages',t:v[1],i:v[2],run:()=>ACT.view(v[0])}));
-  [['Add payment','add-tx','plus'],['Add a bill or payday','add-rec','cal'],['Settings','settings','sliders'],['Switch theme','theme','sun'],['Import a statement (CSV)','import-csv','upload']].forEach(a=>out.push({g:'Actions',t:a[0],i:a[2],run:()=>ACT[a[1]]()}));
+  [['Add transaction','add-tx','plus'],['Add a bill or payday','add-rec','cal'],['Settings','settings','sliders'],['Switch theme','theme','sun']].forEach(a=>out.push({g:'Actions',t:a[0],i:a[2],run:()=>ACT[a[1]]()}));
   if(q){
     S.txRaw.filter(t=>((t.desc||'')+' '+(t.category||'')+' '+(t.who||'')).toLowerCase().includes(q)).sort((a,b)=>a.date<b.date?1:-1).slice(0,8)
-      .forEach(t=>out.push({g:'Payments',t:t.desc||'Payment',s:shortDate(t.date)+' · '+(t.amount>0?'+':'−')+fmt(Math.abs(t.amount)),i:(CATMETA[t.category]||CATMETA.Other)[0],run:()=>{S.q=t.desc||'';S.fcat='';S.month=t.date.slice(0,7);ACT.view('payments')}}));
+      .forEach(t=>out.push({g:'Transactions',t:t.desc||'Transaction',s:shortDate(t.date)+' · '+(t.amount>0?'+':'−')+fmt(Math.abs(t.amount)),i:(CATMETA[t.category]||CATMETA.Other)[0],run:()=>{S.q=t.desc||'';S.fcat='';S.month=t.date.slice(0,7);ACT.view('payments')}}));
     S.rec.forEach(r=>out.push({g:'Bills',t:r.name,s:'Day '+r.day+' · '+fmt(Math.abs(r.amount)),i:'cal',run:()=>ACT.view('bills')}));
-    return out.filter(x=>x.g==='Payments'||(x.t+' '+(x.s||'')).toLowerCase().includes(q)).slice(0,14)}
+    return out.filter(x=>x.g==='Transactions'||(x.t+' '+(x.s||'')).toLowerCase().includes(q)).slice(0,14)}
   return out}
 function palDraw(){const q=$('pal-q').value;palItems=palList(q);palSel=Math.min(palSel,Math.max(palItems.length-1,0));let g='',h='';
   palItems.forEach((x,k)=>{if(x.g!==g){g=x.g;h+='<div class="pal-g">'+g+'</div>'}
@@ -479,7 +484,7 @@ function palDraw(){const q=$('pal-q').value;palItems=palList(q);palSel=Math.min(
   const on=$('pal-list').querySelector('.on');if(on)on.scrollIntoView({block:'nearest'})}
 function palRun(k){const x=palItems[k];if(!x)return;$('pal').close();setTimeout(x.run,60)}
 function openPalette(){const d=$('pal');if(d.open)return;palSel=0;
-  d.innerHTML='<div class="pal-in">'+ic('search')+'<input id="pal-q" type="text" placeholder="Search payments, people, pages" autocomplete="off" aria-label="Search"><kbd>esc</kbd></div><div id="pal-list" class="pal-list"></div>';
+  d.innerHTML='<div class="pal-in">'+ic('search')+'<input id="pal-q" type="text" placeholder="Search transactions, people, pages" autocomplete="off" aria-label="Search"><kbd>esc</kbd></div><div id="pal-list" class="pal-list"></div>';
   d.showModal();palDraw();$('pal-q').focus();
   $('pal-q').oninput=()=>{palSel=0;palDraw()};
   $('pal-q').onkeydown=e=>{if(e.key==='ArrowDown'){e.preventDefault();palSel=Math.min(palSel+1,palItems.length-1);palDraw()}else if(e.key==='ArrowUp'){e.preventDefault();palSel=Math.max(palSel-1,0);palDraw()}else if(e.key==='Enter'){e.preventDefault();palRun(palSel)}};
@@ -556,21 +561,6 @@ async function api(path,body){let r;try{r=await fetch(path,{method:'POST',header
   if(r.status===401&&!/api\/(login|account)/.test(path)){location.reload();throw{message:'Please sign in again.'}}
   const j=await r.json().catch(()=>({}));if(!r.ok)throw{message:j.error||'The server refused the request.'};return j}
 
-let csvText='';
-async function csvPreview(flip){
-  let p;try{p=await api('api/import/csv',{text:csvText,flip,dry:true})}catch(e){return toast(e.message)}
-  const d=$('dlg');d.className='wide';
-  d.innerHTML='<form id="dlg-form"><h2>Import a statement</h2><div class="sub" id="csv-summary"><b>'+plural(p.new,'new payment')+'</b> found'+(p.duplicates?', '+plural(p.duplicates,'already here','already here')+' and skipped':'')+(p.unreadable?', '+plural(p.unreadable,'row')+' could not be read':'')+'.</div>'+
-   '<div class="sub">Columns used: '+Object.keys(p.columns).map(k=>esc(k)+' from “'+esc(p.columns[k])+'”').join(', ')+'</div>'+
-   '<div class="tablewrap"><table><thead><tr><th>Date</th><th style="text-align:left">Description</th><th>Category</th><th>Amount</th></tr></thead><tbody>'+p.preview.map(r=>'<tr><td>'+esc(r.date)+'</td><td style="text-align:left;white-space:normal">'+esc(r.desc)+'</td><td>'+esc(r.category)+'</td><td class="'+(r.amount>0?'in':'')+'">'+(r.amount>0?'+':'−')+fmt(Math.abs(r.amount))+'</td></tr>').join('')+'</tbody></table></div>'+
-   '<label class="check"><input type="checkbox" id="csv-flip"'+(flip?' checked':'')+'>Amounts are reversed (this file shows spending as positive numbers)</label>'+
-   '<div class="dlg-acts"><div><button type="button" class="btn" id="dlg-cancel">Cancel</button><button class="btn primary" id="dlg-ok"'+(p.new?'':' disabled')+'>Import '+plural(p.new,'payment')+'</button></div></div></form>';
-  $('dlg-cancel').onclick=()=>d.close();
-  $('csv-flip').onchange=e=>csvPreview(e.target.checked);
-  $('dlg-form').onsubmit=async e=>{e.preventDefault();d.close();try{const r=await api('api/import/csv',{text:csvText,flip});await S.db.pull();toast('Imported '+plural(r.imported,'payment')+'. Check the categories on the Payments page.')}catch(err){toast(err.message)}};
-  if(!d.open)d.showModal();
-}
-
 async function pickFolder(){try{const r=await api('api/sync/pick',{});if(r.error){toast(r.error);return ''}return r.path||''}catch(e){toast(e.message);return ''}}
 const col=n=>S.db.collection(n);
 const ACT={
@@ -606,14 +596,14 @@ const ACT={
   note(id){S.noteIdx+=+id;S.anim='note';render()},
   theme(){const next=themeNow()==='dark'?'light':'dark';try{localStorage.setItem('theme',next)}catch(e){}
     document.documentElement.dataset.theme=next;const h=document.documentElement;h.classList.add('theming');clearTimeout(h._t);h._t=setTimeout(()=>h.classList.remove('theming'),500);if(S.db)patchSettings({theme:next}).catch(()=>{});render()},
-  'add-tx'(){openForm({title:'Add payment',submit:'Add',fields:txFields(null),onSubmit(v){const t=txFromForm(v);if(t)save(col('transactions').add(t),'Payment added')}})},
+  'add-tx'(){openForm({title:'Add transaction',submit:'Add',fields:txFields(null),onSubmit(v){const t=txFromForm(v);if(t)save(col('transactions').add(t),'Transaction added')}})},
   'edit-tx'(id){const t=S.txRaw.find(x=>x.id===id);if(!t)return;
-    openForm({title:'Edit payment',fields:txFields(t).concat({html:'<label class="check"><input type="checkbox" id="remember">Always use this category for payments named like this</label>'}),
+    openForm({title:'Edit transaction',fields:txFields(t).concat({html:'<label class="check"><input type="checkbox" id="remember">Always use this category for transactions named like this</label>'}),
       extra:{label:'Delete',run(){ACT['del-tx'](id)}},
       async onSubmit(v){const n=txFromForm(v);if(!n)return;const rem=$('remember').checked&&n.desc;
-        if(await save(col('transactions').doc(id).update(n),rem?'':'Payment updated')&&rem)save(col('rules').doc(ruleId(n.desc)).set({match:n.desc.toLowerCase(),category:n.category}),'Updated. “'+n.desc+'” will be filed under '+n.category+' from now on.')}})},
+        if(await save(col('transactions').doc(id).update(n),rem?'':'Transaction updated')&&rem)save(col('rules').doc(ruleId(n.desc)).set({match:n.desc.toLowerCase(),category:n.category}),'Updated. “'+n.desc+'” will be filed under '+n.category+' from now on.')}})},
   'del-tx'(id){const t=S.txRaw.find(x=>x.id===id);if(!t)return;const body=Object.assign({},t);delete body.id;
-    save(col('transactions').doc(id).delete()).then(ok=>{if(ok)toast('Payment deleted',()=>save(col('transactions').doc(id).set(body)))})},
+    save(col('transactions').doc(id).delete()).then(ok=>{if(ok)toast('Transaction deleted',()=>save(col('transactions').doc(id).set(body)))})},
   'add-rec'(){openForm({title:'Add a regular bill or payday',submit:'Add',fields:[
      {id:'name',label:'Name',placeholder:'Rent'},{id:'amount',label:'Amount each month',type:'number'},
      {id:'dir',label:'Type',options:['Bill (money out)','Payday (money in)'],value:'Bill (money out)'},
@@ -627,7 +617,7 @@ const ACT={
   settings(){const c=cfg();openForm({title:'Settings',fields:[
      {id:'household',label:'Household name',value:c.household},
      {id:'currency',label:'Currency',options:Object.keys(LOCALE),value:c.currency},
-     {id:'opening',label:'Opening balance, before the first payment recorded here',type:'number',min:-1e12,value:c.opening},
+     {id:'opening',label:'Opening balance, before the first transaction recorded here',type:'number',min:-1e12,value:c.opening},
      {id:'members',label:'People, separated by commas',value:c.members.join(', ')},
      {html:'<div class="eyebrow" style="margin-top:6px">Monthly budgets (leave blank for none)</div><div class="two">'+BUDGET_CATS.map(k=>'<div class="fld"><label for="b-'+k+'">'+k+'</label><input id="b-'+k+'" type="number" min="0" step="any" inputmode="decimal" value="'+(S.budgets[k]&&S.budgets[k].limit||'')+'"></div>').join('')+'</div>'}],
     async onSubmit(v){const members=v.members.split(',').map(s=>s.trim()).filter(Boolean).slice(0,8);
@@ -639,20 +629,22 @@ const ACT={
     const writes=[].concat(S.txRaw.filter(t=>t.sample).map(t=>({op:'delete',col:'transactions',id:t.id})),S.rec.filter(r=>r.sample).map(r=>({op:'delete',col:'recurring',id:r.id})),Object.keys(S.budgets).filter(k=>S.budgets[k].sample).map(k=>({op:'delete',col:'budgets',id:k})));
     if(S.settings&&S.settings.sample){const s=Object.assign({},S.settings,{opening:0,members:DEF.members});delete s.sample;writes.push({op:'set',col:'settings',id:'main',data:s})}
     save(S.db.batch(writes),'Examples cleared. Set your opening balance and names in Settings.')},
-  'import-csv'(){const f=$('csv-file');f.value='';f.click()},
   rules(){const d=$('dlg');d.className='';
     d.innerHTML='<form id="dlg-form"><h2>Category rules</h2><div class="list">'+S.rules.map(r=>'<div class="row" style="grid-template-columns:minmax(0,1fr) auto auto"><div class="t"><b>'+esc(r.match)+'</b><small>filed under '+esc(r.category)+'</small></div><span></span><button type="button" class="x" data-act="del-rule" data-id="'+esc(r.id)+'" aria-label="Forget rule for '+esc(r.match)+'">×</button></div>').join('')+'</div><div class="dlg-acts"><div><button type="button" class="btn" id="dlg-cancel">Close</button></div></div></form>';
     $('dlg-cancel').onclick=()=>d.close();if(!d.open)d.showModal()},
   async 'del-rule'(id){if(await save(col('rules').doc(id).delete(),'Rule forgotten')){if(S.rules.length)ACT.rules();else $('dlg').close()}}
 };
-document.addEventListener('click',e=>{if(swipeBlockedClick()&&e.target.closest('#cstack')){e.preventDefault();e.stopPropagation();return}const b=e.target.closest('[data-act]');if(!b||b.disabled)return;const a=b.dataset.act;if(ACT[a])ACT[a](b.dataset.id)});
+document.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('.rowctl'))return;if(swipeBlockedClick()&&e.target.closest('#cstack')){e.preventDefault();e.stopPropagation();return}const b=e.target.closest('[data-act]');if(!b||b.disabled)return;const a=b.dataset.act;if(ACT[a])ACT[a](b.dataset.id)});
 document.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target.matches&&e.target.matches('.row.click,.vcard')){e.preventDefault();const a=e.target.dataset.act;if(ACT[a])ACT[a](e.target.dataset.id)}});
 document.addEventListener('input',e=>{if(e.target.id==='lim'){$('lim-out').textContent=+e.target.value?fmt(+e.target.value):'None set'}if(e.target.id==='q'){S.q=e.target.value;refreshTx()}});
 document.addEventListener('change',e=>{const t=e.target;
   if(t.id==='cowner'){const meta=Object.assign({},(S.settings&&S.settings.cardMeta)||{});meta[t.dataset.card]=Object.assign({},meta[t.dataset.card],{owner:t.value});save(patchSettings({cardMeta:meta}),'Owner saved');return}
   if(t.id==='lim'){const lim=Object.assign({},(S.settings&&S.settings.cardLimits)||{});lim[t.dataset.card]=+t.value;save(patchSettings({cardLimits:lim}));return}
-  if(t.id==='fcat'){S.fcat=t.value;refreshTx()}
-  else if(t.id==='csv-file'&&t.files[0]){const r=new FileReader();r.onload=()=>{csvText=String(r.result||'');csvPreview(false)};r.onerror=()=>toast('Could not read that file.');r.readAsText(t.files[0]);t.value=''}});
+  if(t.classList&&t.classList.contains('rs')){const tx=S.txRaw.find(x=>x.id===t.dataset.id);if(!tx)return;
+    const p=t.dataset.f==='who'?{who:t.value==='Shared'?'':t.value}:{category:t.value};
+    if(t.dataset.f==='category'&&t.value==='Income'&&tx.amount<0)p.amount=Math.abs(tx.amount);
+    save(col('transactions').doc(tx.id).update(p),t.dataset.f==='who'?'Person saved':'Category saved');return}
+  if(t.id==='fcat'){S.fcat=t.value;refreshTx()}});
 window.addEventListener('hashchange',()=>{const v=hashView();if(v!==S.view){S.view=v;S.anim='page';render()}});
 let rz=0,lastW=0;const redraw=()=>{clearTimeout(rz);rz=setTimeout(()=>{const w=$('view').clientWidth;if(S.ready&&S.view==='overview'&&w!==lastW){lastW=w;drawChart(monthData(curMo()))}},120)};
 window.addEventListener('resize',redraw);if(window.ResizeObserver)new ResizeObserver(redraw).observe($('view'));

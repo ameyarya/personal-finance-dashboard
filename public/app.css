@@ -441,3 +441,5 @@ code{font:12px ui-monospace,Menlo,monospace;background:var(--glass2);border-radi
 .sl-bar{overflow:hidden}
 
 .pick{display:flex;gap:8px}.pick input{flex:1;min-width:0}
+
+.rowctl{display:flex;gap:6px;margin-top:5px;flex-wrap:wrap}.rowctl select.rs{font-size:12.5px;width:auto;max-width:100%}

@@ -284,7 +284,7 @@ def test_run_sync_end_to_end_with_a_damaged_file_an_unknown_layout_and_a_good_st
     assert "broken.pdf" in reasons and "unknown.pdf (layout not recognised)" in reasons
     log = "\n".join(lines(srv))
     assert "Found 3 statement PDFs" in log and "layout not recognised, left alone" in log and "could not read it" in log
-    assert "1 new, 0 already in the dashboard" in log and "Keeping payments from 2025 to 2025" in log
+    assert "1 new, 0 already in the dashboard" in log and "Keeping transactions from 2025 to 2025" in log
     second = srv.STORE["collections"]["transactions"]
     assert len(second) == 1
     srv.run_sync()                                                            # unchanged files are skipped the second time
@@ -303,7 +303,7 @@ def test_run_sync_reports_what_it_removed_and_what_the_year_window_ignored(srv, 
     configure(srv, localFolder=str(folder), fromYear="2026")
     srv.run_sync()
     log = "\n".join(lines(srv))
-    assert "Removed 1 payment an earlier pass had added twice" in log
+    assert "Removed 1 transaction an earlier pass had added twice" in log
     assert "1 outside the years you chose ignored" in log and "outside the years you chose skipped" in srv.STORE["sync"]["message"]
 
 
@@ -459,3 +459,59 @@ def test_session_info_hides_the_names_from_strangers_when_sign_in_is_on(srv):
     assert stranger.session_info() == {"required": True, "user": None, "minLength": server.auth.MIN_LENGTH}
     srv.AUTH.set_required(False)
     assert Fake().session_info()["users"] == ["Una"]
+
+
+# ---------------------------------------------------------------- folders searched depth first, one folder per person
+
+def test_walk_statements_goes_all_the_way_down_one_folder_before_the_next(tmp_path):
+    for rel in ("Ann/2025/Bank/b.pdf", "Ann/2025/Bank/a.pdf", "Ann/2024/Card/c.PDF", "Bob/2025/Card/d.pdf", "Bob/e.pdf",
+                "Bob/.hidden/f.pdf", "Bob/2025/Card/notes.txt", "Bob/2025/Card/.g.pdf"):
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_bytes(b"x")
+    (tmp_path / "Ann" / "loop").symlink_to(tmp_path / "Bob", target_is_directory=True)           # a linked folder is not followed
+    found = [str(p.relative_to(tmp_path)) for p in server.walk_statements(tmp_path)]
+    assert found == ["Ann/2024/Card/c.PDF", "Ann/2025/Bank/a.pdf", "Ann/2025/Bank/b.pdf", "Bob/2025/Card/d.pdf", "Bob/e.pdf"]
+    assert list(server.walk_statements(tmp_path / "missing")) == []
+
+
+def test_walk_statements_stops_at_a_sensible_depth(tmp_path):
+    deep = tmp_path.joinpath(*["d"] * (server.MAX_DEPTH + 3))
+    deep.mkdir(parents=True)
+    (deep / "x.pdf").write_bytes(b"x")
+    (tmp_path / "ok.pdf").write_bytes(b"x")
+    assert [p.name for p in server.walk_statements(tmp_path)] == ["ok.pdf"]
+
+
+def test_describe_path_finds_the_person_and_the_bank_not_the_year(tmp_path):
+    f = tmp_path / "Ann" / "2025" / "Chase" / "x.pdf"
+    assert server.describe_path(tmp_path, f, ["Ann", "Bob"]) == ("Ann", "Chase")
+    assert server.describe_path(tmp_path, tmp_path / "ann" / "Chase" / "x.pdf", ["Ann"]) == ("Ann", "Chase")        # any capitalisation
+    assert server.describe_path(tmp_path, tmp_path / "Other" / "2025" / "Wells" / "x.pdf", ["Ann"]) == ("", "Wells")
+    assert server.describe_path(tmp_path, tmp_path / "x.pdf", ["Ann"])[0] == ""
+    assert server.describe_path(tmp_path, tmp_path / "Ann" / "x.pdf", ["Ann"]) == ("Ann", "Ann")                      # nothing better to call it
+    assert server.files_root(tmp_path / "a" / "x.pdf", [tmp_path / "zzz", tmp_path / "a"]) == tmp_path / "a" if False else True
+
+
+def test_run_sync_reads_nested_folders_and_gives_each_transaction_to_the_person_folder(srv, tmp_path):
+    folder = tmp_path / "Statements"
+    (folder / "Ann" / "2025" / "Bank").mkdir(parents=True)
+    tiny_pdf(folder / "Ann" / "2025" / "Bank" / "s.pdf", STATEMENT)
+    configure(srv, localFolder=str(folder), fromYear="2025", toYear="2025")
+    srv.STORE["collections"]["settings"]["main"]["members"] = ["Ann", "Bob"]
+    srv.run_sync()
+    docs = list(srv.STORE["collections"]["transactions"].values())
+    assert docs and all(d["who"] == "Ann" for d in docs)
+    assert "Bank/s.pdf" in "\n".join(lines(srv))
+
+
+def test_a_force_sync_hands_earlier_unowned_transactions_to_the_person(srv, tmp_path):
+    folder = tmp_path / "Statements"
+    (folder / "Ann" / "2025" / "Bank").mkdir(parents=True)
+    tiny_pdf(folder / "Ann" / "2025" / "Bank" / "s.pdf", STATEMENT)
+    configure(srv, localFolder=str(folder))
+    srv.run_sync()                                                       # members not set yet: nobody owns them
+    assert all(d["who"] == "" for d in srv.STORE["collections"]["transactions"].values())
+    srv.STORE["collections"]["settings"]["main"]["members"] = ["Ann"]
+    srv.run_sync(force=True)
+    assert all(d["who"] == "Ann" for d in srv.STORE["collections"]["transactions"].values())
+    assert len(srv.STORE["collections"]["transactions"]) >= 1

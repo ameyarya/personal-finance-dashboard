@@ -399,6 +399,10 @@ def add_statement_rows(parsed, window):
             have.setdefault((t.get("card", ""), round(abs(float(t.get("amount", 0))), 2)), []).append(t.get("date", ""))
         added = skipped = dupes = 0
         seen = {}
+        unowned = {}
+        for t in docs.values():
+            if t.get("source") == "pdf" and not t.get("who"):
+                unowned.setdefault((t.get("card", ""), round(abs(float(t.get("amount", 0))), 2), t.get("date", "")), []).append(t)
         for r in sorted(parsed, key=lambda r: r["date"]):
             year = int(r["date"][:4])
             if (lo and year < lo) or (hi and year > hi):
@@ -406,10 +410,13 @@ def add_statement_rows(parsed, window):
                 continue
             if take_match(have, r["card"], r["amount"], r["date"]):
                 dupes += 1
+                waiting = unowned.get((r["card"], round(abs(r["amount"]), 2), r["date"]))
+                if r.get("who") and waiting:
+                    waiting.pop()["who"] = r["who"]        # a payment read before the person folders were used gets its owner now
                 continue
             k = norm_key(r["date"], r["amount"], r["card"])
             seen[k] = seen.get(k, 0) + 1
-            doc = {"date": r["date"], "desc": r["desc"], "amount": r["amount"], "card": r["card"], "who": "", "source": "pdf"}
+            doc = {"date": r["date"], "desc": r["desc"], "amount": r["amount"], "card": r["card"], "who": r.get("who", ""), "source": "pdf"}
             if r.get("cash"):
                 doc["cash"] = True
             cat = r.get("category")
@@ -437,6 +444,36 @@ def drop_pdf_duplicates():
         return len(gone)
 
 
+MAX_DEPTH = 12
+
+
+def files_root(f, folders):
+    return next((d for d in folders if d in f.parents), folders[0])
+
+
+def walk_statements(root, depth=0):
+    """Every PDF under root, depth first: a folder is searched all the way down before the next one starts. Hidden and linked folders are skipped."""
+    try:
+        entries = sorted(os.scandir(root), key=lambda e: e.name.lower())
+    except OSError:
+        return
+    for e in entries:
+        if e.is_dir(follow_symlinks=False) and not e.name.startswith(".") and depth < MAX_DEPTH:
+            yield from walk_statements(Path(e.path), depth + 1)
+        elif e.is_file() and e.name.lower().endswith(".pdf") and not e.name.startswith("."):
+            yield Path(e.path)
+
+
+def describe_path(root, f, members):
+    """(person, label) from where a PDF sits: Statements/<person>/<year>/<bank>/file.pdf. The person is the first folder when it is one of the
+    household's people; the label is the nearest folder that is not a year (the bank or card), which helps the reader pick a layout."""
+    parts = f.relative_to(root).parts[:-1]
+    names = {m.lower(): m for m in members}
+    person = names.get(parts[0].lower(), "") if parts else ""
+    label = next((p for p in reversed(parts) if not re.fullmatch(r"\d{4}", p) and p.lower() not in names), "")
+    return person, label or f.parent.name
+
+
 def run_sync(force=False):
     """One pass: read every new or changed PDF, add what is missing. Safe to call from any thread."""
     with lock:
@@ -460,8 +497,9 @@ def run_sync(force=False):
         if not pypdf_available():
             raise SyncError("Reading PDFs needs pypdf. Install it with: pip install pypdf")
         window = year_window(cfg)
-        slog("Keeping payments from %s to %s" % (window[0] or "the earliest year", window[1] or "the latest year"))
-        files = [f for folder in folders for f in sorted(folder.rglob("*.pdf"))]
+        slog("Keeping transactions from %s to %s" % (window[0] or "the earliest year", window[1] or "the latest year"))
+        files = [f for folder in folders for f in walk_statements(folder)]
+        members = (STORE["collections"]["settings"].get("main") or {}).get("members") or []
         with lock:
             seen_files = STORE["sync"].setdefault("files", {})
             SYNC.update(phase="Reading statements", done=0, total=len(files))
@@ -473,13 +511,14 @@ def run_sync(force=False):
             SYNC["done"] = i - 1
             time.sleep(float(os.environ.get("FINANCES_SYNC_DELAY", "0")))   # lets tests watch a slow sync
             sig = "%d-%d|%s-%s" % (f.stat().st_size, int(f.stat().st_mtime), window[0], window[1])      # a new year range means read it again
-            name = "%s/%s" % (f.parent.name, f.name)
+            person, label = describe_path(files_root(f, folders), f, members)
+            name = "%s/%s" % (label, f.name)
             if seen_files.get(str(f)) == sig and not force:
                 slog("[%d/%d] %s: unchanged, skipped" % (i, len(files), name))
                 continue
             slog("[%d/%d] Reading %s" % (i, len(files), name))
             try:
-                rows = statements.parse_pdf(f, f.parent.name)
+                rows = statements.parse_pdf(f, label)
             except Exception as e:  # a damaged or protected file must not stop the rest
                 status["unreadable"].append("%s (%s)" % (f.name, str(e)[:60]))
                 slog("    could not read it: %s" % str(e)[:100], "error")
@@ -488,21 +527,24 @@ def run_sync(force=False):
                 status["unreadable"].append("%s (layout not recognised)" % f.name)
                 slog("    layout not recognised, left alone", "warn")
             else:
+                for r in rows:
+                    if person:
+                        r["who"] = person
                 parsed.append(rows)
-                slog("    %d payment%s found" % (len(rows), "" if len(rows) == 1 else "s"))
+                slog("    %d transaction%s found" % (len(rows), "" if len(rows) == 1 else "s"))
             pending[str(f)] = sig
-        SYNC.update(done=len(files), phase="Adding payments")
+        SYNC.update(done=len(files), phase="Adding transactions")
         if SYNC["cancel"].is_set():
             raise Stopped()
         removed = drop_pdf_duplicates()
         if removed:
-            slog("Removed %d payment%s an earlier pass had added twice" % (removed, "" if removed == 1 else "s"), "warn")
+            slog("Removed %d transaction%s an earlier pass had added twice" % (removed, "" if removed == 1 else "s"), "warn")
         added, skipped, dupes = add_statement_rows(parsed, window)
         with lock:
             seen_files.update(pending)
         slog("%d new, %d already in the dashboard%s" % (added, dupes, (", %d outside the years you chose ignored" % skipped) if skipped else ""), "ok")
         status.update(added=added, pdfs=len(files))
-        status["message"] = "%d new payment%s from %d statement%s%s." % (added, "" if added == 1 else "s", len(files), "" if len(files) == 1 else "s",
+        status["message"] = "%d new transaction%s from %d statement%s%s." % (added, "" if added == 1 else "s", len(files), "" if len(files) == 1 else "s",
                                                                           ("; %d outside the years you chose skipped" % skipped) if skipped else "")
     except Stopped:
         status.update(ok=False, message="Stopped. Nothing was added.")

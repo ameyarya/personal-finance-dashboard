@@ -205,3 +205,27 @@ def test_a_stray_column_heading_in_front_of_a_bank_row_is_not_taken_as_a_payment
     text = n("Bank of America Beginning balance on June 1, 2025 $0 Ending balance on June 30, 2025 $0 Deposits and other additions Date Description Amount "
              "06/01/25 Date Description Amount 06/02/25 Interest 1.00 06/03/25 Real deposit 2.00")
     assert [r["desc"] for r in st.parse_text(text)] == ["Real deposit"]
+
+
+# ---------------------------------------------------------------- Chase checking
+
+CHASE = ("JPMorgan Chase Bank, N.A. January 29, 2025 through February 27, 2025 CHECKING SUMMARY Chase College Checking AMOUNT Beginning Balance $282.37 "
+         "Deposits and Additions 6,794.93 Ending Balance $29.31 TRANSACTION DETAIL DATE DESCRIPTION AMOUNT BALANCE Beginning Balance $282.37 "
+         "01/31 Acme Co Direct Dep PPD ID: 9111111103 3,173.00 3,455.37 02/10 Chase Credit Crd Autopay PPD ID: 4760039224 -8.17 3,447.20 "
+         "02/19 Wealthfront EDI Pymnts 8Aca6A99302945 Web ID: 4271967207 -7,000.00 69.13 02/27 Some Bank ACH Pmt M2460 Web ID: 2005032111 -39.82 29.31 Ending Balance $29.31 IN CASE OF ERRORS")
+
+
+def test_chase_checking_rows_are_cash_with_ids_stripped_and_card_payments_marked_transfers():
+    rows = st.parse_text(CHASE)
+    assert [(r["date"], r["amount"], r.get("category")) for r in rows] == [
+        ("2025-01-31", 3173.0, None), ("2025-02-10", -8.17, "Transfer"), ("2025-02-19", -7000.0, "Transfer"), ("2025-02-27", -39.82, "Transfer")]
+    assert all(r["cash"] and r["card"] == "Chase Checking" for r in rows)
+    assert "ID:" not in rows[0]["desc"] and rows[0]["desc"].startswith("Acme Co Direct Dep")
+
+
+def test_chase_checking_without_a_readable_period_or_without_the_markers():
+    assert st.parse_chase_checking("nothing here") is None
+    assert st.parse_chase_checking("Chase CHECKING SUMMARY TRANSACTION DETAIL but no dates") == []
+    assert st.parse_chase_checking("Chase CHECKING SUMMARY TRANSACTION DETAIL Foo 1, 2025 through Foo 2, 2025") == []
+    no_end = CHASE.replace("Ending Balance $29.31 IN CASE OF ERRORS", "").replace("29.31 ", "29.31")
+    assert len(st.parse_chase_checking(no_end)) >= 3

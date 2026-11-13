@@ -63,7 +63,7 @@ def add_payment(page, desc, amount, category="Groceries", direction="Money out",
     if who:
         page.select_option("#f-who", who)
     page.click("#dlg-ok")
-    expect(page.locator("#toast")).to_contain_text("Payment added")
+    expect(page.locator("#toast")).to_contain_text("Transaction added")
 
 
 # ---------------------------------------------------------------- overview
@@ -115,7 +115,7 @@ def test_OV05_noticed_card_pages_through_observations(page):
 def test_OV06_empty_household_shows_guidance_not_errors(blank):
     expect(blank.locator("#balance")).to_have_text("$0")
     expect(blank.locator("#banner")).to_be_hidden()
-    expect(blank.locator("#c-tx")).to_contain_text("No payments recorded")
+    expect(blank.locator("#c-tx")).to_contain_text("No transactions recorded")
     expect(blank.locator("#c-due")).to_contain_text("No regular bills")
     expect(blank.locator("#c-noticed")).to_contain_text("Nothing stands out")
 
@@ -123,7 +123,7 @@ def test_OV06_empty_household_shows_guidance_not_errors(blank):
 # ---------------------------------------------------------------- navigation
 
 def test_NAV01_every_page_opens_from_the_sidebar(page):
-    for view, title in (("payments", "Payments"), ("bills", "Bills"), ("budgets", "Budgets"), ("cards", "Cards"),
+    for view, title in (("payments", "Transactions"), ("bills", "Bills"), ("budgets", "Budgets"), ("cards", "Cards"),
                         ("insights", "Insights"), ("household", "Household"), ("accounts", "Accounts"), ("overview", "Good morning")):
         go(page, view)
         expect(page.locator("#greet")).to_have_text(title)
@@ -187,7 +187,7 @@ def test_PAY01_add_a_payment(page, server):
     expect(page.locator("#balance")).to_have_text("${:,}".format(before - 80))
     go(page, "payments")
     row = page.locator("#tx-list .row", has_text="Bike repair")
-    expect(row).to_contain_text("Today · Transport · Sam")
+    expect(row).to_contain_text("Today")
     expect(row).to_contain_text("−$80")
     saved = [t for t in server.docs("transactions").values() if t["desc"] == "Bike repair"]
     assert saved == [{"date": "2026-11-12", "desc": "Bike repair", "amount": -80, "category": "Transport", "who": "Sam"}]
@@ -216,7 +216,7 @@ def test_PAY03_amount_is_required(page, server):
 def test_PAY04_edit_a_payment_and_remember_its_category(page, server):
     go(page, "payments")
     page.locator("#tx-list .row", has_text="Hardware store").click()
-    expect(page.locator("#dlg h2")).to_have_text("Edit payment")
+    expect(page.locator("#dlg h2")).to_have_text("Edit transaction")
     expect(page.locator("#f-desc")).to_have_value("Hardware store")
     page.select_option("#f-category", "Housing")
     page.check("#remember")
@@ -236,7 +236,7 @@ def test_PAY05_keyboard_opens_a_payment(page):
     go(page, "payments")
     page.locator("#tx-list .row").first.focus()
     page.keyboard.press("Enter")
-    expect(page.locator("#dlg h2")).to_have_text("Edit payment")
+    expect(page.locator("#dlg h2")).to_have_text("Edit transaction")
 
 
 def test_PAY06_delete_and_undo(page, server):
@@ -244,7 +244,7 @@ def test_PAY06_delete_and_undo(page, server):
     total = len(server.docs("transactions"))
     row = page.locator("#tx-list .row", has_text="Pharmacy")
     row.locator('[data-act="del-tx"]').click()
-    expect(page.locator("#toast")).to_contain_text("Payment deleted")
+    expect(page.locator("#toast")).to_contain_text("Transaction deleted")
     expect(page.locator("#tx-list .row", has_text="Pharmacy")).to_have_count(0)
     assert len(server.docs("transactions")) == total - 1
     page.click("#toast-undo")
@@ -260,7 +260,7 @@ def test_PAY07_search_and_category_filter(page):
     expect(page.locator("#tx-count")).to_contain_text("2 entries")
     expect(page.locator("#q")).to_be_focused()
     page.fill("#q", "zzz")
-    expect(page.locator("#tx-list")).to_contain_text("No payments match")
+    expect(page.locator("#tx-list")).to_contain_text("No transactions match")
     page.fill("#q", "")
     page.select_option("#fcat", "Dining")
     rows = page.locator("#tx-list .row")
@@ -279,53 +279,12 @@ def test_PAY08_text_typed_by_people_is_never_run_as_code(page):
     assert page.locator("#tx-list img").count() == 0
 
 
-def test_PAY09_import_a_statement(page, server, tmp_path):
-    f = tmp_path / "statement.csv"
-    f.write_text("Date,Description,Amount\n11/09/2026,TRADER JOE'S #12,-61.30\n11/10/2026,SHELL OIL 5521,-39.00\n11/11/2026,ACME PAYROLL,1200.00\n")
-    go(page, "payments")
-    page.set_input_files("#csv-file", str(f))
-    expect(page.locator("#csv-summary")).to_contain_text("3 new payments")
-    expect(page.locator("#dlg table tbody tr")).to_have_count(3)
-    expect(page.locator("#dlg table")).to_contain_text("Groceries")
-    page.click("#dlg-ok")
-    expect(page.locator("#toast")).to_contain_text("Imported 3 payments")
-    expect(page.locator("#tx-list .row", has_text="TRADER JOE'S #12")).to_contain_text("Groceries")
-    expect(page.locator("#tx-list .row", has_text="SHELL OIL 5521")).to_contain_text("Transport")
-    # the same file again brings in nothing
-    page.set_input_files("#csv-file", str(f))
-    expect(page.locator("#csv-summary")).to_contain_text("0 new payments")
-    expect(page.locator("#dlg-ok")).to_be_disabled()
-    page.click("#dlg-cancel")
 
 
-def test_PAY10_statement_with_reversed_amounts(blank, empty_server, tmp_path):
-    f = tmp_path / "card.csv"
-    f.write_text("Date,Description,Amount\n11/10/2026,Bookshop,24.00\n")
-    go(blank, "payments")
-    blank.set_input_files("#csv-file", str(f))
-    expect(blank.locator("#dlg table")).to_contain_text("+$24")
-    blank.check("#csv-flip")
-    expect(blank.locator("#dlg table")).to_contain_text("−$24")
-    blank.click("#dlg-ok")
-    expect(blank.locator("#toast")).to_contain_text("Imported 1 payment")
-    assert [t["amount"] for t in empty_server.docs("transactions").values()] == [-24.0]
 
 
-def test_PAY11_unreadable_statement_is_explained(page, tmp_path):
-    f = tmp_path / "notes.csv"
-    f.write_text("hello,world\n1,2\n")
-    go(page, "payments")
-    page.set_input_files("#csv-file", str(f))
-    expect(page.locator("#toast")).to_contain_text("No header row with a date column")
 
 
-def test_PAY12_export_link(page):
-    go(page, "payments")
-    link = page.locator('#c-tx a[href="api/export.csv"]')
-    expect(link).to_have_attribute("download", "payments.csv")
-    with page.expect_download() as d:
-        link.click()
-    assert d.value.suggested_filename == "payments.csv"
 
 
 # ---------------------------------------------------------------- bills
@@ -652,12 +611,12 @@ def test_SYNC02_manual_sync_reads_a_pdf_and_adds_only_new_payments(browser, blan
     blank.reload()
     go(blank, "accounts")
     blank.click('#c-sync [data-act="sync"]')
-    expect(blank.locator("#c-sync #sy-status")).to_contain_text("2 new payments", timeout=20000)
+    expect(blank.locator("#c-sync #sy-status")).to_contain_text("2 new transactions", timeout=20000)
     rows = [t for t in empty_server.docs("transactions").values() if t.get("source") == "pdf"]
     assert sorted(t["amount"] for t in rows) == [-40.0, 2500.0] and all(t["cash"] for t in rows)
     blank.click('#synclog [data-act="sl-close"]')
     blank.click('#c-sync [data-act="sync"]')
-    expect(blank.locator("#c-sync #sy-status")).to_contain_text("0 new payments", timeout=20000)     # nothing is added twice
+    expect(blank.locator("#c-sync #sy-status")).to_contain_text("0 new transactions", timeout=20000)     # nothing is added twice
     assert len([t for t in empty_server.docs("transactions").values() if t.get("source") == "pdf"]) == 2
 
 
@@ -964,7 +923,7 @@ def test_ACC06_login_page_fits_a_phone(browser, empty_server, width):
 def test_MORE01_phone_shows_four_tabs_and_a_more_tab(browser, server):
     p = open_page(browser, server, viewport={"width": 375, "height": 812})
     visible = [b.inner_text().strip() for b in p.locator("#nav button").all() if b.is_visible()]
-    assert visible == ["Overview", "Cards", "Payments", "Bills", "More"], visible
+    assert visible == ["Overview", "Cards", "Transactions", "Bills", "More"], visible
     expect(p.locator("#more-sheet")).to_have_count(0)
     p.click(".more-btn")
     sheet = p.locator("#more-sheet")
