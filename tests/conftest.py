@@ -33,9 +33,10 @@ class Server:
         self.data_dir = Path(data_dir)
         self.extra = extra
         self.proc = None
+        self.env = {}
 
     def start(self):
-        env = dict(os.environ, FINANCES_TODAY=TODAY)
+        env = dict(os.environ, FINANCES_TODAY=TODAY, **self.env)
         self.proc = subprocess.Popen(
             [sys.executable, str(ROOT / "server.py"), "--port", str(self.port), "--bind", "127.0.0.1",
              "--name", "", "--data", str(self.data_dir), "--quiet", *self.extra],

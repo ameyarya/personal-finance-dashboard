@@ -439,3 +439,5 @@ code{font:12px ui-monospace,Menlo,monospace;background:var(--glass2);border-radi
 .vrow span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1;margin-right:10px}
 
 .sl-bar{overflow:hidden}
+
+.pick{display:flex;gap:8px}.pick input{flex:1;min-width:0}

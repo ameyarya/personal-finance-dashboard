@@ -64,13 +64,12 @@ The `data/` folder is in `.gitignore`. Back up `data.json`, or use *Accounts →
 ## Statement PDFs
 
 *Accounts → Statement sync* reads PDF statements and adds any payments the dashboard does not have yet.
-Point it at a Google Drive folder link, a folder on the computer, or both. The server checks on its own
+Point it at the folder on this Mac that holds your statement PDFs (type the path or press **Choose…**). The server checks on its own
 (every hour by default, only while the computer is awake) and there is a **Sync now** button, also in the
 top bar.
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # pypdf reads the PDFs
-brew install rclone && rclone config create gdrive drive scope=drive.readonly   # only for Google Drive; sign in once
 .venv/bin/python server.py
 ```
 

@@ -623,12 +623,12 @@ def test_SELECT01_every_dropdown_has_the_same_arrow_and_inset(page):
 def test_SYNC01_sync_card_saves_its_settings(blank, empty_server):
     go(blank, "accounts")
     expect(blank.locator("#c-sync")).to_contain_text("Statement sync")
-    blank.fill("#sy-link", "https://drive.google.com/drive/folders/abc123")
+    blank.fill("#sy-local", "/Users/you/Statements")           # privacy: allow
     blank.fill("#sy-every", "30")
     blank.click('[data-act="save-sync"]')
     expect(blank.locator("#toast")).to_contain_text("Sync settings saved")
     sync = empty_server.docs("settings")["main"]["sync"]
-    assert sync["driveLink"].endswith("abc123") and sync["everyMinutes"] == 30
+    assert sync["localFolder"].endswith("Statements") and sync["everyMinutes"] == 30
 
 
 def make_pdf(browser, path, body):
@@ -665,8 +665,8 @@ def test_SYNC03_sync_edge_cases_give_plain_messages(blank, empty_server, tmp_pat
     base = {"household": "H", "currency": "USD", "opening": 0, "members": ["A"]}
     go(blank, "accounts")
     blank.click('#c-sync [data-act="sync"]')
-    expect(blank.locator("#c-sync #sy-status")).to_contain_text("Add a Google Drive folder link or a local folder", timeout=20000)
-    for sync, message in (({"localFolder": str(tmp_path / "nope")}, "does not exist"), ({"driveLink": "not a link"}, "does not look like a Google Drive folder link")):
+    expect(blank.locator("#c-sync #sy-status")).to_contain_text("Choose the folder", timeout=20000)
+    for sync, message in (({"localFolder": str(tmp_path / "nope")}, "does not exist"),):
         empty_server.call("PUT", "/api/doc/settings/main", dict(base, sync=sync))
         blank.reload()
         go(blank, "accounts")
@@ -795,16 +795,38 @@ def test_SYNCWIN02_stop_cancels_a_running_sync_and_adds_nothing(browser, tmp_pat
         server.stop()
 
 
-def test_SYNCWIN03_paste_a_drive_link_and_save_it_from_the_window(blank, empty_server):
+def test_SYNCWIN03_choose_or_type_the_statements_folder_and_save_it_from_the_window(blank, empty_server, tmp_path):
     blank.click("#btn-sync")
     expect(blank.locator("#synclog")).to_be_visible()
-    blank.fill("#sl-link", "not a drive link")
+    blank.fill("#sl-link", str(tmp_path))
     blank.click("#sl-savelink")
-    expect(blank.locator("#toast")).to_contain_text("does not look like a Google Drive folder link")
-    blank.fill("#sl-link", "https://drive.google.com/drive/folders/abcDEF_123?usp=drive_link")
+    expect(blank.locator("#toast")).to_contain_text("Folder saved")
+    assert empty_server.docs("settings")["main"]["sync"]["localFolder"] == str(tmp_path)
+    blank.fill("#sl-link", "")
     blank.click("#sl-savelink")
-    expect(blank.locator("#toast")).to_contain_text("Folder link saved")
-    assert empty_server.docs("settings")["main"]["sync"]["driveLink"].startswith("https://drive.google.com/drive/folders/abcDEF_123")
+    expect(blank.locator("#toast")).to_contain_text("Folder cleared")
+    # the Choose… button asks the server for a folder; here the macOS chooser is replaced by a fixed answer
+    blank.route("**/api/sync/pick", lambda r: r.fulfill(json={"path": str(tmp_path)}))
+    blank.click("#sl-pick")
+    expect(blank.locator("#toast")).to_contain_text("Folder saved")
+    assert empty_server.docs("settings")["main"]["sync"]["localFolder"] == str(tmp_path)
+    blank.unroute("**/api/sync/pick")
+    blank.route("**/api/sync/pick", lambda r: r.fulfill(json={"error": "The folder chooser needs macOS."}))
+    blank.click("#sl-pick")
+    expect(blank.locator("#toast")).to_contain_text("needs macOS")
+    blank.unroute("**/api/sync/pick")
+    blank.route("**/api/sync/pick", lambda r: r.fulfill(json={"cancelled": True}))
+    blank.click("#sl-pick")
+    blank.unroute("**/api/sync/pick")
+    blank.route("**/api/sync/pick", lambda r: r.abort())
+    blank.click("#sl-pick")
+
+
+def test_SYNC05_choose_button_on_the_sync_card_fills_the_folder_box(blank, tmp_path):
+    go(blank, "accounts")
+    blank.route("**/api/sync/pick", lambda r: r.fulfill(json={"path": str(tmp_path)}))
+    blank.click('[data-act="pick-local"]')
+    expect(blank.locator("#sy-local")).to_have_value(str(tmp_path))
 
 
 def test_SYNCWIN04_window_fits_a_phone_and_buttons_do_not_overflow(browser, server):

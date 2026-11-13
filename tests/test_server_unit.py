@@ -68,7 +68,7 @@ def test_public_store_reports_sync_state_without_the_file_list(srv):
     srv.STORE["sync"] = {"files": {"/x.pdf": "1-2"}, "message": "ok"}
     pub = srv.public_store()
     assert "files" not in pub["sync"] and pub["sync"]["message"] == "ok" and pub["sync"]["running"] is False
-    assert set(pub["sync"]) >= {"rclone", "pypdf", "phase", "done", "total", "started"}
+    assert set(pub["sync"]) >= {"pypdf", "phase", "done", "total", "started"}
 
 
 def test_today_can_be_pinned(monkeypatch):
@@ -154,93 +154,23 @@ def test_pypdf_available_reflects_whether_it_can_be_imported(monkeypatch):
     assert server.pypdf_available() is False
 
 
-def test_find_rclone_looks_in_homebrew_folders(monkeypatch, tmp_path):
-    tool = tmp_path / "rclone"
-    tool.write_text("#!/bin/sh\n")
-    tool.chmod(0o755)
-    monkeypatch.setenv("PATH", "/nonexistent")
-    monkeypatch.setattr(server.shutil, "which", lambda name, path=None: str(tool) if path and "/opt/homebrew/bin" in path else None)
-    assert server.find_rclone() == str(tool)
+def test_pick_folder_returns_the_chosen_path_or_says_why_not(monkeypatch):
+    calls = []
 
+    def fake_run(cmd, **kw):
+        calls.append(cmd)
+        return type("R", (), {"returncode": 0, "stdout": "/Users/you/Statements/\n"})()
+    monkeypatch.setattr(server.subprocess, "run", fake_run)
+    assert server.pick_folder() == {"path": "/Users/you/Statements"} and calls[0][0] == "osascript"      # privacy: allow
+    monkeypatch.setattr(server.subprocess, "run", lambda *a, **k: type("R", (), {"returncode": 1, "stdout": ""})())
+    assert server.pick_folder() == {"cancelled": True}                      # the person pressed Cancel
 
-def fake_rclone(tmp_path, monkeypatch, script):
-    """An 'rclone' that prints what the script says, for testing the download step without Google."""
-    path = tmp_path / "rclone-fake"
-    path.write_text("#!/bin/sh\n" + script + "\n")
-    path.chmod(path.stat().st_mode | stat.S_IEXEC)
-    monkeypatch.setattr(server, "find_rclone", lambda: str(path))
-    return path
-
-
-def test_drive_pull_does_nothing_without_a_link_and_rejects_a_bad_one(srv, tmp_path):
-    assert srv.drive_pull({}, tmp_path / "d") is None
-    assert srv.drive_pull({"driveLink": "   "}, tmp_path / "d") is None
-    with pytest.raises(srv.SyncError, match="does not look like a Google Drive folder link"):
-        srv.drive_pull({"driveLink": "https://example.com/x"}, tmp_path / "d")
-
-
-def test_drive_pull_needs_rclone_installed(srv, tmp_path, monkeypatch):
-    monkeypatch.setattr(server, "find_rclone", lambda: None)
-    with pytest.raises(srv.SyncError, match="rclone is not installed"):
-        srv.drive_pull({"driveLink": "https://drive.google.com/drive/folders/abc123"}, tmp_path / "d")
-
-
-@pytest.mark.parametrize("link,folder", [("https://drive.google.com/drive/folders/abc-123_X?usp=sharing", "abc-123_X"), ("https://drive.google.com/open?id=idOnly9", "idOnly9")])
-def test_drive_pull_passes_the_folder_id_and_streams_a_clean_log(srv, tmp_path, monkeypatch, link, folder):
-    log = tmp_path / "args.txt"
-    fake_rclone(tmp_path, monkeypatch, """echo "$@" > %s
-echo "2025/03/04 10:11:12 NOTICE: gdrive: This remote uses rclone's shared Google Drive client_id, which is being retired"
-echo "2025/03/04 10:11:12 INFO  :           0 B / 0 B, -, 0 B/s, ETA -"
-echo "2025/03/04 10:11:13 INFO  : Jan.pdf: Copied (new)"
-echo "2025/03/04 10:11:13 INFO  : Jan.pdf: Copied (new)"
-echo ""
-echo "2025/03/04 10:11:14 NOTICE: something to know"
-echo "2025/03/04 10:11:15 ERROR : a file failed"
-exit 0""" % log)
-    srv.drive_pull({"driveLink": link, "rcloneRemote": "mydrive"}, tmp_path / "d")
-    args = log.read_text()
-    assert "mydrive,root_folder_id=%s:" % folder in args and "--include *.pdf" in args
-    lines = [(x["l"], x["m"]) for x in srv.SYNC["log"]]
-    messages = [m for _, m in lines]
-    assert messages.count("INFO  : Jan.pdf: Copied (new)") == 1               # repeated lines collapse
-    assert not any("0 B / 0 B" in m or "client_id" in m for m in messages)    # progress ticks and the retirement notice are noise
-    assert ("warn", "NOTICE: something to know") in lines and ("warn", "ERROR : a file failed") in lines
-    assert lines[-1] == ("ok", "Download finished") and srv.SYNC["proc"] is None
-    assert (tmp_path / "d").is_dir()
-
-
-@pytest.mark.parametrize("script,expected", [
-    ("echo \"Failed to create file system: didn't find section in config file\"; exit 3", "rclone config create mydrive drive scope=drive.readonly"),
-    ("echo 'Failed: remote not found in config'; exit 3", "Sign in to Google Drive once"),
-    ("echo 'ERROR : quota exceeded'; exit 1", "Google Drive said: ERROR : quota exceeded"),
-    ("exit 1", "Google Drive said: rclone failed"),
-    ("kill -9 $$", "took too long"),
-])
-def test_drive_pull_explains_failures_in_plain_words(srv, tmp_path, monkeypatch, script, expected):
-    fake_rclone(tmp_path, monkeypatch, script)
-    with pytest.raises(srv.SyncError, match=expected.replace("(", r"\(")):
-        srv.drive_pull({"driveLink": "https://drive.google.com/drive/folders/abc", "rcloneRemote": "mydrive"}, tmp_path / "d")
-
-
-def test_drive_pull_can_be_stopped_mid_download(srv, tmp_path, monkeypatch):
-    fake_rclone(tmp_path, monkeypatch, "echo started; exec sleep 30")
-    outcome = {}
-
-    def run():
-        try:
-            srv.drive_pull({"driveLink": "https://drive.google.com/drive/folders/abc"}, tmp_path / "d")
-        except BaseException as e:           # noqa: BLE001 - we want to see what escaped
-            outcome["error"] = e
-
-    t = threading.Thread(target=run)
-    t.start()
-    for _ in range(100):
-        if srv.SYNC["proc"] is not None:
-            break
-        time.sleep(0.05)
-    srv.stop_sync()
-    t.join(10)
-    assert isinstance(outcome.get("error"), srv.Stopped) and not t.is_alive()
+    def too_slow(*a, **k):
+        raise server.subprocess.TimeoutExpired("osascript", 300)
+    monkeypatch.setattr(server.subprocess, "run", too_slow)
+    assert server.pick_folder() == {"cancelled": True}
+    monkeypatch.setattr(server.shutil, "which", lambda name: None)
+    assert "needs macOS" in server.pick_folder()["error"]
 
 
 def test_stop_sync_is_harmless_when_nothing_is_running(srv):
@@ -318,7 +248,7 @@ def lines(srv):
 def test_run_sync_needs_a_source(srv):
     configure(srv)
     srv.run_sync()
-    assert srv.STORE["sync"]["ok"] is False and "Add a Google Drive folder link or a local folder" in srv.STORE["sync"]["message"]
+    assert srv.STORE["sync"]["ok"] is False and "Choose the folder" in srv.STORE["sync"]["message"]
     assert srv.SYNC["running"] is False and srv.SYNC["phase"] == ""
 
 
@@ -406,24 +336,10 @@ def test_run_sync_can_be_stopped_between_files_and_just_before_saving(srv, tmp_p
 
 def test_run_sync_turns_surprises_into_a_message(srv, tmp_path, monkeypatch):
     configure(srv, localFolder=str(tmp_path))
-    monkeypatch.setattr(server, "drive_pull", lambda cfg, dest: (_ for _ in ()).throw(RuntimeError("disk on fire")))
-    configure(srv, driveLink="https://drive.google.com/drive/folders/abc")
+    monkeypatch.setattr(server, "year_window", lambda cfg: (_ for _ in ()).throw(RuntimeError("disk on fire")))
     srv.run_sync()
     assert srv.STORE["sync"]["ok"] is False and "Sync failed: disk on fire" in srv.STORE["sync"]["message"]
     assert srv.SYNC["running"] is False
-
-
-def test_run_sync_downloads_then_reads_with_a_fake_rclone(srv, tmp_path, monkeypatch):
-    fake = tmp_path / "bin-rclone"
-    pdf_source = tmp_path / "src.pdf"
-    tiny_pdf(pdf_source, STATEMENT)
-    fake.write_text("#!/bin/sh\nmkdir -p \"$3\"\ncp %s \"$3/drive.pdf\"\necho 'INFO  : drive.pdf: Copied (new)'\n" % pdf_source)
-    fake.chmod(0o755)
-    monkeypatch.setattr(server, "find_rclone", lambda: str(fake))
-    configure(srv, driveLink="https://drive.google.com/drive/folders/abc")
-    srv.run_sync()
-    assert srv.STORE["sync"]["ok"] is True and srv.STORE["sync"]["added"] == 1
-    assert "Copied (new)" in "\n".join(lines(srv))
 
 
 # ---------------------------------------------------------------- the background loop
@@ -457,7 +373,7 @@ def test_auto_sync_runs_when_due_and_waits_when_not(srv, monkeypatch):
     run_loop(monkeypatch)                                                     # just synced: wait
     assert not runs
     srv.STORE["sync"]["lastRun"] = (dt.datetime.now() - dt.timedelta(hours=3)).isoformat()
-    configure(srv, driveLink="https://drive.google.com/drive/folders/a", auto=True, everyMinutes="5")
+    configure(srv, localFolder=str(Path(srv.CFG["data"])), auto=True, everyMinutes="5")
     run_loop(monkeypatch)
     assert runs
 

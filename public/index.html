@@ -47,7 +47,7 @@
 <div id="synclog" class="synclog" role="dialog" aria-modal="true" aria-labelledby="sl-title" hidden>
   <div class="sl-box">
     <div class="sl-head"><div><h2 id="sl-title">Statement sync</h2><small id="sl-state" aria-live="polite"></small></div><button class="x" data-act="sl-close" aria-label="Close sync window">×</button></div>
-    <div class="sl-link"><input id="sl-link" type="url" placeholder="Paste the Google Drive folder link here" aria-label="Google Drive folder link" autocomplete="off"><button class="btn" id="sl-savelink" data-act="sl-savelink">Save link</button></div>
+    <div class="sl-link"><input id="sl-link" type="text" placeholder="Folder with your statement PDFs, e.g. /Users/you/Statements" aria-label="Statements folder" autocomplete="off" spellcheck="false"><button class="btn" id="sl-pick" data-act="sl-pick">Choose…</button><button class="btn" id="sl-savelink" data-act="sl-savelink">Save</button></div>
     <div class="bar sl-bar" id="sl-bar"><i id="sl-fill"></i></div>
     <div class="sl-meta"><span id="sl-step"></span><span id="sl-time"></span></div>
     <pre id="sl-log" role="log" tabindex="0" aria-label="Sync log"></pre>

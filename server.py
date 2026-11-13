@@ -41,7 +41,7 @@ MIME = {".png": "image/png", ".ico": "image/svg+xml", ".html": "text/html; chars
 
 AUTH = None
 lock = threading.RLock()
-SYNC = {"running": False, "log": [], "seq": 0, "cancel": threading.Event(), "proc": None, "phase": "", "done": 0, "total": 0, "started": ""}
+SYNC = {"running": False, "log": [], "seq": 0, "cancel": threading.Event(), "phase": "", "done": 0, "total": 0, "started": ""}
 CFG = {}
 STORE = {}
 
@@ -142,7 +142,7 @@ def persist():
 
 def public_store():
     sync = {k: v for k, v in STORE.get("sync", {}).items() if k != "files"}
-    sync.update(running=SYNC["running"], phase=SYNC["phase"], done=SYNC["done"], total=SYNC["total"], started=SYNC["started"], rclone=bool(find_rclone()), pypdf=pypdf_available())
+    sync.update(running=SYNC["running"], phase=SYNC["phase"], done=SYNC["done"], total=SYNC["total"], started=SYNC["started"], pypdf=pypdf_available())
     return {"version": STORE["version"], "collections": STORE["collections"], "sync": sync}
 
 
@@ -293,17 +293,27 @@ class SyncError(Exception):
     pass
 
 
-def find_rclone():
-    """rclone is usually in Homebrew's folder, which a login service does not have on its PATH."""
-    return shutil.which("rclone", path=os.environ.get("PATH", "") + ":/opt/homebrew/bin:/usr/local/bin")
-
-
 def pypdf_available():
     try:
         import pypdf  # noqa: F401
         return True
     except ImportError:
         return False
+
+
+def pick_folder():
+    """Ask macOS for a folder with its own chooser window. Works because this server runs on the Mac being used."""
+    if not shutil.which("osascript"):
+        return {"error": "The folder chooser needs macOS. Type the folder path instead."}
+    script = 'POSIX path of (choose folder with prompt "Choose the folder that holds your statement PDFs")'
+    try:
+        r = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=300)
+    except subprocess.TimeoutExpired:
+        return {"cancelled": True}
+    path = r.stdout.strip().rstrip("/") if r.returncode == 0 else ""
+    if not path:
+        return {"cancelled": True}
+    return {"path": path}
 
 
 def sync_settings():
@@ -327,57 +337,6 @@ class Stopped(Exception):
 
 def stop_sync():
     SYNC["cancel"].set()
-    proc = SYNC.get("proc")
-    if proc and proc.poll() is None:
-        proc.terminate()
-
-
-def drive_pull(cfg, dest):
-    """Copy the PDFs from a Google Drive folder with rclone, streaming what it does into the log. The sign-in lives in rclone."""
-    link = (cfg.get("driveLink") or "").strip()
-    if not link:
-        return
-    m = re.search(r"/folders/([A-Za-z0-9_-]+)|[?&]id=([A-Za-z0-9_-]+)", link)
-    if not m:
-        raise SyncError("That does not look like a Google Drive folder link.")
-    folder = m.group(1) or m.group(2)
-    remote = (cfg.get("rcloneRemote") or "gdrive").strip()
-    rclone = find_rclone()
-    if not rclone:
-        raise SyncError("rclone is not installed. Install it (brew install rclone) or fill in a local folder instead.")
-    dest.mkdir(parents=True, exist_ok=True)
-    SYNC["phase"] = "Downloading from Google Drive"
-    slog("Asking Google Drive for the PDFs in the folder (remote '%s')" % remote)
-    cmd = [rclone, "copy", "%s,root_folder_id=%s:" % (remote, folder), str(dest), "--include", "*.pdf", "--drive-acknowledge-abuse", "-v", "--stats", "3s", "--stats-one-line"]
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
-    SYNC["proc"] = proc
-    watchdog = threading.Timer(1200, proc.kill)
-    watchdog.start()
-    tail, last = [], ""
-    try:
-        for line in proc.stdout:
-            line = re.sub(r"^\d{4}/\d\d/\d\d \d\d:\d\d:\d\d ", "", line.rstrip())
-            if not line or "shared Google Drive client_id" in line:
-                continue
-            tail.append(line)
-            if re.match(r"INFO\s*:\s+0 B / 0 B", line) or line == last:      # empty progress ticks and repeats are just noise
-                continue
-            last = line
-            slog(line, "warn" if line.startswith(("ERROR", "NOTICE")) else "info")
-        proc.wait()
-    finally:
-        watchdog.cancel()
-        SYNC["proc"] = None
-    if SYNC["cancel"].is_set():
-        raise Stopped()
-    if proc.returncode:
-        text = "\n".join(tail)
-        if "didn't find section" in text or "not found in config" in text:
-            raise SyncError("Sign in to Google Drive once: run  rclone config create %s drive scope=drive.readonly  and approve in the browser." % remote)
-        if proc.returncode < 0:
-            raise SyncError("Google Drive took too long to answer. It will try again at the next sync.")
-        raise SyncError("Google Drive said: " + (tail[-1][:200] if tail else "rclone failed"))
-    slog("Download finished", "ok")
 
 
 def norm_key(date, amount, card):
@@ -479,7 +438,7 @@ def drop_pdf_duplicates():
 
 
 def run_sync(force=False):
-    """One pass: pull from Drive, read every new or changed PDF, add what is missing. Safe to call from any thread."""
+    """One pass: read every new or changed PDF, add what is missing. Safe to call from any thread."""
     with lock:
         if SYNC["running"]:
             return
@@ -490,20 +449,14 @@ def run_sync(force=False):
     slog("Sync started%s" % (" (re-reading every statement)" if force else ""))
     try:
         cfg = sync_settings()
-        folders = []
-        if (cfg.get("driveLink") or "").strip():
-            dest = CFG["data"] / "statements"
-            drive_pull(cfg, dest)
-            folders.append(dest)
         local = (cfg.get("localFolder") or "").strip()
-        if local:
-            p = Path(local).expanduser()
-            if not p.is_dir():
-                raise SyncError("The local folder %s does not exist." % local)
-            slog("Using the folder on this computer: %s" % p)
-            folders.append(p)
-        if not folders:
-            raise SyncError("Add a Google Drive folder link or a local folder first.")
+        if not local:
+            raise SyncError("Choose the folder that holds your statement PDFs first.")
+        p = Path(local).expanduser()
+        if not p.is_dir():
+            raise SyncError("The folder %s does not exist." % local)
+        slog("Using the folder on this computer: %s" % p)
+        folders = [p]
         if not pypdf_available():
             raise SyncError("Reading PDFs needs pypdf. Install it with: pip install pypdf")
         window = year_window(cfg)
@@ -574,7 +527,7 @@ def auto_sync():
     while True:
         try:
             cfg = sync_settings()
-            if cfg.get("auto", True) and ((cfg.get("driveLink") or "").strip() or (cfg.get("localFolder") or "").strip()):
+            if cfg.get("auto", True) and (cfg.get("localFolder") or "").strip():
                 every = max(5, int(cfg.get("everyMinutes") or 60)) * 60
                 last = STORE.get("sync", {}).get("lastRun")
                 due = True
@@ -771,6 +724,8 @@ class Handler(BaseHTTPRequestHandler):
             if parts == ["api", "sync", "stop"]:
                 stop_sync()
                 return self.send_json(200, {"stopping": True})
+            if parts == ["api", "sync", "pick"]:
+                return self.send_json(200, pick_folder())
             if parts == ["api", "sync"]:
                 if SYNC["running"]:
                     return self.send_json(200, {"running": True})

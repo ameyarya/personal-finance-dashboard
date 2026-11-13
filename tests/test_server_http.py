@@ -1,5 +1,6 @@
 """The HTTP surface of a real server process: every route, the awkward requests, and sign-in on top of all of them."""
 import json
+import os
 import re
 import ssl
 import time
@@ -99,7 +100,7 @@ def test_sync_log_stop_and_start_routes(empty_server, tmp_path):
         if not log["running"] and log["lines"] and log["ok"] is not None:
             break
         time.sleep(0.05)
-    assert any("Add a Google Drive folder link" in x["m"] for x in log["lines"]) and log["ok"] is False
+    assert any("Choose the folder" in x["m"] for x in log["lines"]) and log["ok"] is False
     later = s.call("GET", "/api/sync/log?since=%d" % log["last"])[1]
     assert later["lines"] == []                                                                  # only new lines come back
 
@@ -206,3 +207,18 @@ def test_cookies_are_secure_only_over_https(tmp_path):
             idle.close()
     finally:
         server.stop()
+
+
+def test_pick_route_returns_what_the_mac_chooser_returns(tmp_path):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake = bin_dir / "osascript"
+    fake.write_text("#!/bin/sh\necho /Users/you/Statements/\n")           # privacy: allow
+    fake.chmod(0o755)
+    s = Server(tmp_path / "d")
+    s.env = {"PATH": "%s:%s" % (bin_dir, os.environ["PATH"])}
+    s.start()
+    try:
+        assert s.call("POST", "/api/sync/pick", {})[1] == {"path": "/Users/you/Statements"}      # privacy: allow
+    finally:
+        s.stop()

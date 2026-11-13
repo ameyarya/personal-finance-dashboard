@@ -283,16 +283,13 @@ def test_M19_a_password_can_be_set_for_one_named_person(page, server):
 
 # ---------------------------------------------------------------- sync window extras
 
-def test_M20_sync_window_copy_and_save_buttons_and_bad_link(page, server):
+def test_M20_sync_window_copy_and_save_buttons_and_folder_box(page, server):
     page.context.grant_permissions(["clipboard-read", "clipboard-write"])
     page.click("#btn-sync")
     expect(page.locator("#synclog")).to_be_visible()
-    page.fill("#sl-link", "https://example.com/nope")
+    page.fill("#sl-link", "/Users/you/Statements")           # privacy: allow
     page.click('[data-act="sl-savelink"]')
-    expect(page.locator("#toast")).to_contain_text("does not look like")
-    page.fill("#sl-link", "https://drive.google.com/drive/folders/abc123_-X")
-    page.click('[data-act="sl-savelink"]')
-    expect(page.locator("#toast")).to_contain_text("Folder link saved")
+    expect(page.locator("#toast")).to_contain_text("Folder saved")
     page.fill("#sl-link", "")
     page.click('[data-act="sl-savelink"]')
     expect(page.locator("#toast")).to_contain_text("cleared")

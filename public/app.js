@@ -389,13 +389,12 @@ function sourcesCard(){
 }
 function syncCard(){
   const y=S.settings&&S.settings.sync||{},st=S.sync||{},when=st.lastRun?new Date(st.lastRun).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'';
-  const warn=[];if(!st.pypdf)warn.push('Reading PDFs needs <b>pypdf</b>: <code>pip install pypdf</code>.');if(y.driveLink&&!st.rclone)warn.push('Google Drive needs <b>rclone</b>: <code>brew install rclone</code>, then <code>rclone config create gdrive drive scope=drive.readonly</code> and sign in once.');
+  const warn=[];if(!st.pypdf)warn.push('Reading PDFs needs <b>pypdf</b>: <code>pip install pypdf</code>.');
   return '<div class="head"><div><h2>Statement sync</h2><small>Reads the PDF statements in a folder and adds any payments that are missing</small></div><div class="toolbar"><button class="link" data-act="sl-open">View log</button><button class="btn primary sm" data-act="sync"'+(st.running?' disabled':'')+'>'+(st.running?'Syncing…':'Sync now')+'</button></div></div>'+
    (warn.length?'<div class="hint">'+ic('info','accent')+'<span>'+warn.join(' ')+'</span></div>':'')+
-   '<div class="fld"><label for="sy-link">Google Drive folder link</label><input id="sy-link" type="url" placeholder="https://drive.google.com/drive/folders/…" value="'+esc(y.driveLink||'')+'"></div>'+
+   '<div class="fld"><label for="sy-local">Statements folder on this Mac</label><div class="pick"><input id="sy-local" placeholder="/Users/you/Statements" spellcheck="false" value="'+esc(y.localFolder||'')+'"><button class="btn" data-act="pick-local">Choose…</button></div></div>'+
    '<div class="two"><div class="fld"><label for="sy-from">Keep payments from year</label><input id="sy-from" type="number" min="1990" max="2100" placeholder="earliest" value="'+esc(y.fromYear||'')+'"></div><div class="fld"><label for="sy-to">to year</label><input id="sy-to" type="number" min="1990" max="2100" placeholder="latest" value="'+esc(y.toYear||'')+'"></div></div>'+
-   '<div class="two"><div class="fld"><label for="sy-remote">rclone remote name</label><input id="sy-remote" placeholder="gdrive" value="'+esc(y.rcloneRemote||'')+'"></div><div class="fld"><label for="sy-every">Check every (minutes)</label><input id="sy-every" type="number" min="5" step="5" value="'+esc(y.everyMinutes||60)+'"></div></div>'+
-   '<div class="fld"><label for="sy-local">Or a folder on this computer</label><input id="sy-local" placeholder="/Users/you/Statements" value="'+esc(y.localFolder||'')+'"></div>'+
+   '<div class="two"><div class="fld"><label for="sy-every">Check every (minutes)</label><input id="sy-every" type="number" min="5" step="5" value="'+esc(y.everyMinutes||60)+'"></div></div>'+
    '<label class="check"><input type="checkbox" id="sy-auto"'+(y.auto===false?'':' checked')+'>Check automatically while this computer is awake</label>'+
    '<div class="toolbar"><button class="btn" data-act="save-sync">Save</button></div>'+
    (when?'<div class="sub" id="sy-status">'+(st.ok===false?'<span class="err">'+esc(st.message||'')+'</span>':esc(st.message||''))+' <small>Last run '+when+'</small></div>':'<div class="sub" id="sy-status">Not run yet.</div>')+
@@ -426,7 +425,7 @@ async function slPoll(){
   slElapsed();
 }
 function openSyncLog(){const o=$('synclog');SL.opener=document.activeElement;SL.open=true;o.hidden=false;document.body.style.overflow='hidden';
-  const y=S.settings&&S.settings.sync||{};$('sl-link').value=y.driveLink||'';$('sl-log').innerHTML='';SL.last=0;SL.text=[];SL.runId='';
+  const y=S.settings&&S.settings.sync||{};$('sl-link').value=y.localFolder||'';$('sl-log').innerHTML='';SL.last=0;SL.text=[];SL.runId='';
   slPoll();clearInterval(SL.timer);SL.timer=setInterval(slPoll,700);clearInterval(SL.clock);SL.clock=setInterval(slElapsed,1000);$('sl-log').focus()}
 function closeSyncLog(){SL.open=false;$('synclog').hidden=true;document.body.style.overflow='';clearInterval(SL.timer);clearInterval(SL.clock);if(SL.opener&&SL.opener.focus)try{SL.opener.focus()}catch(e){}}
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&SL.open){e.preventDefault();closeSyncLog()}});
@@ -572,6 +571,7 @@ async function csvPreview(flip){
   if(!d.open)d.showModal();
 }
 
+async function pickFolder(){try{const r=await api('api/sync/pick',{});if(r.error){toast(r.error);return ''}return r.path||''}catch(e){toast(e.message);return ''}}
 const col=n=>S.db.collection(n);
 const ACT={
   more(){toggleMore()},
@@ -589,10 +589,11 @@ const ACT={
   async 'sync-stop'(){try{await api('api/sync/stop',{});toast('Stopping…');slPoll()}catch(e){toast(e.message)}},
   async 'sl-copy'(){const t=SL.text.join('\n');try{await navigator.clipboard.writeText(t);toast('Log copied')}catch(e){toast('Could not copy. Use Save log instead.')}},
   'sl-save'(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([SL.text.join('\n')+'\n'],{type:'text/plain'}));a.download='sync-log.txt';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),2000)},
-  async 'sl-savelink'(){const v=($('sl-link').value||'').trim();if(v&&!/\/folders\/[\w-]+|[?&]id=[\w-]+/.test(v))return toast('That does not look like a Google Drive folder link.');
-    const y=Object.assign({},S.settings&&S.settings.sync,{driveLink:v});await save(patchSettings({sync:y}),v?'Folder link saved':'Folder link cleared')},
+  async 'sl-savelink'(){const v=($('sl-link').value||'').trim();const y=Object.assign({},S.settings&&S.settings.sync,{localFolder:v});await save(patchSettings({sync:y}),v?'Folder saved':'Folder cleared')},
+  async 'sl-pick'(){const p=await pickFolder();if(p){$('sl-link').value=p;ACT['sl-savelink']()}},
+  async 'pick-local'(){const p=await pickFolder();if(p)$('sy-local').value=p},
   'save-sync'(){const v=id=>($(id)&&$(id).value||'').trim(),every=Math.max(5,parseInt(v('sy-every'),10)||60);
-    save(patchSettings({sync:{driveLink:v('sy-link'),rcloneRemote:v('sy-remote'),localFolder:v('sy-local'),everyMinutes:every,auto:$('sy-auto').checked,fromYear:v('sy-from'),toYear:v('sy-to')}}),'Sync settings saved')},
+    save(patchSettings({sync:{localFolder:v('sy-local'),everyMinutes:every,auto:$('sy-auto').checked,fromYear:v('sy-from'),toYear:v('sy-to')}}),'Sync settings saved')},
   csel(id){S.cardIdx=+id;S.flip=false;cardsRefresh()},
   cflip(){S.flip=!S.flip;cardsRefresh()},
   cnext(id){const n=cardList(monthData(curMo())).length||1;S.cardIdx=(((S.cardIdx+ +id)%n)+n)%n;S.flip=false;cardsRefresh()},
