@@ -350,3 +350,28 @@ dialog#pal{padding:0;width:min(580px,calc(100vw - 32px));margin:12vh auto 0;over
 .app::before{content:"";position:absolute;left:236px;top:0;bottom:0;width:1px;background:var(--line);pointer-events:none}
 .side{border-right:0}
 @media (max-width:880px){.app::before{display:none}}
+
+/* ---- cards screen ---- */
+.cstack{position:relative;height:300px;width:min(430px,100%);margin:6px auto 0;perspective:1400px}
+.vcard{position:absolute;left:0;right:0;bottom:0;height:230px;cursor:pointer;transition:transform .65s var(--ease),opacity .45s;transform-origin:50% 0}
+.vcard .inner{position:absolute;inset:0;transition:transform .8s var(--ease);transform-style:preserve-3d}
+.vcard.flip .inner{transform:rotateY(180deg)}
+.vcard .face{position:absolute;inset:0;border-radius:22px;padding:20px;backface-visibility:hidden;-webkit-backface-visibility:hidden;color:#fff;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden;
+  background:linear-gradient(150deg,var(--a),var(--b));border:1px solid rgba(255,255,255,.4);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.6),inset 0 -20px 40px -20px rgba(255,255,255,.25),0 26px 50px -26px rgba(0,0,0,.8)}
+.vcard .face::after{content:"";position:absolute;inset:0;background:linear-gradient(115deg,rgba(255,255,255,.35),transparent 38%,transparent 62%,rgba(255,255,255,.14));pointer-events:none}
+.vcard .back{transform:rotateY(180deg);justify-content:flex-start;gap:8px}
+.vcard .back small{margin-top:auto;opacity:.75}
+.vrow{display:flex;justify-content:space-between;font-size:14px;border-bottom:1px solid rgba(255,255,255,.25);padding:5px 0}
+.vtop{display:flex;justify-content:space-between;align-items:center;font-size:16px}.vtop .nfc svg{width:22px;height:22px;transform:rotate(90deg);opacity:.85}
+.chip{width:44px;height:32px;border-radius:8px;background:linear-gradient(135deg,rgba(255,255,255,.85),rgba(255,255,255,.35));border:1px solid rgba(255,255,255,.7)}
+.vbot{display:flex;justify-content:space-between;align-items:flex-end;gap:12px}.vbot small{display:block;opacity:.8;font-size:12px}.vbot b{font:600 22px var(--display)}
+.vcard:hover:not([style*="opacity:0"]){filter:brightness(1.05)}
+.cnav{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:2px}
+.dots{display:flex;gap:6px}.dots i{width:7px;height:7px;border-radius:50%;background:var(--track);transition:width .35s var(--ease),background .25s}.dots i.on{width:22px;border-radius:999px;background:var(--accent)}
+.tiles2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.range{width:100%;accent-color:var(--accent);height:26px}
+.mini{width:46px;height:32px;border-radius:9px;background:linear-gradient(150deg,var(--a),var(--b));border:1px solid rgba(255,255,255,.45);box-shadow:inset 0 1px 0 rgba(255,255,255,.5);flex:none}
+.row.cur{background:var(--glass2)}
+.row .amt .bar{margin-bottom:4px}
+.anim .vcard{animation:fadein .7s var(--ease) backwards}.anim .vcard:nth-child(2){animation-delay:.08s}.anim .vcard:nth-child(3){animation-delay:.16s}

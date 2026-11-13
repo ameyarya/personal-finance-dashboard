@@ -16,10 +16,11 @@ const ICONS={grid:'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',swap:'M7 
  chart:'M5 20V10M12 20V4M19 20v-7',bank:'M4 10h16M6 10v8M10 10v8M14 10v8M18 10v8M3 20h18M12 3l9 5H3z',
  sun:'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19',moon:'M20 14A8 8 0 1 1 10 4a6.5 6.5 0 0 0 10 10z',auto:'M12 3a9 9 0 1 0 0 18zM12 3a9 9 0 0 1 0 18',
  search:'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4-4',plus:'M12 5v14M5 12h14',send:'M21 3L3 11l7 3 3 7zM10 14l11-11',bell:'M6 16v-5a6 6 0 0 1 12 0v5l2 2H4zM10 21h4',
+ card:'M3 6h18v12H3zM3 10h18M7 15h4',
  upload:'M12 16V4M7 9l5-5 5 5M5 20h14',download:'M12 4v12M7 11l5 5 5-5M5 20h14'};
 const ic=(n,col)=>'<svg class="ic" viewBox="0 0 24 24"'+(col?' style="color:var(--'+col+')"':'')+' aria-hidden="true"><path d="'+(ICONS[n]||ICONS.dots)+'"/></svg>';
 const catIco=(c,col)=>{const m=CATMETA[c]||CATMETA.Other;return '<span class="ico">'+ic(m[0],col||m[1])+'</span>'};
-const VIEWS=[['overview','Overview','grid'],['payments','Payments','swap'],['bills','Bills','cal'],['budgets','Budgets','pie'],['pots','Pots','jar'],['insights','Insights','chart'],['household','Household','users'],['accounts','Accounts','bank']];
+const VIEWS=[['overview','Overview','grid'],['cards','Cards','card'],['payments','Payments','swap'],['bills','Bills','cal'],['budgets','Budgets','pie'],['pots','Pots','jar'],['insights','Insights','chart'],['household','Household','users'],['accounts','Accounts','bank']];
 const LOCALE={USD:'en-US',EUR:'en-IE',GBP:'en-GB',CAD:'en-CA',AUD:'en-AU',INR:'en-IN',SGD:'en-SG',AED:'en-AE',JPY:'ja-JP',MXN:'es-MX'};
 const DEF={household:'Our household',currency:'USD',opening:0,members:['You','Partner']};
 const pad=n=>String(n).padStart(2,'0');
@@ -27,7 +28,7 @@ const iso=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
 const NOW=new Date(), TODAY=iso(NOW), YM=TODAY.slice(0,7);
 const fyOf=()=>{const y=S.settings&&+S.settings.fiscalYear;return y?{lo:y+'-01',hi:y+'-12'}:{lo:'0000-00',hi:YM}};
 const hashView=()=>{const h=location.hash.slice(1);return VIEWS.some(v=>v[0]===h)?h:'overview'};
-const S={settings:null,txRaw:[],tx:[],budgets:{},pots:[],rec:[],accounts:[],rules:[],ready:false,db:null,month:YM,view:hashView(),span:6,noteIdx:0,note:'',confirmClear:false,q:'',fcat:'',anim:'page'};
+const S={cardIdx:0,flip:false,settings:null,txRaw:[],tx:[],budgets:{},pots:[],rec:[],accounts:[],rules:[],ready:false,db:null,month:YM,view:hashView(),span:6,noteIdx:0,note:'',confirmClear:false,q:'',fcat:'',anim:'page'};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const cfg=()=>Object.assign({},DEF,S.settings||{});
@@ -106,6 +107,7 @@ function render(){
   if(S.ready&&!m.cur)lede='Looking back at '+mName(S.month)+'.';
   else if(S.ready){const pay=m.items.find(i=>!i.paid&&i.amount>0&&i.due>=m.last),nb=m.items.filter(i=>!i.paid&&i.amount<0&&(!pay||i.due<=pay.due)).length;
     lede=(pay?pay.name+' lands '+(pay.due===m.last?'today':'in '+plural(pay.due-m.last,'day'))+'. ':'')+(nb?plural(nb,'bill')+(nb===1?' goes':' go')+' out '+(pay?'before then.':'before the month ends.'):pay?'No bills are due before then.':'Nothing is due for the rest of the month.')}
+  if(S.ready&&S.view==='cards'){const cs=cardList(m);lede=cs.length?plural(cs.length,'card')+' · '+fmt(sum(cs,c=>c.spent))+' spent on '+(cs.length===1?'it':'them')+' in '+mLong(m.mo):'No cards found in the statements yet.'}
   $('lede').textContent=lede;
   {const b=fyOf();$('next').disabled=S.month>=b.hi;$('prev').disabled=S.month<=b.lo}
   $('ic-search').innerHTML=ic('search');$('btn-add').innerHTML=ic('plus');$('btn-send').innerHTML=ic('send');$('btn-bell').innerHTML=ic('bell');
@@ -133,6 +135,7 @@ function render(){
   let h;
   if(!S.ready)h=card('','<div class="empty">Loading your figures…</div>');
   else if(S.view==='overview')h=card('s7',balanceCard(m),'c-balance')+card('s5',flowCard(),'c-flow')+card('s6',catsCard(m),'c-cats')+card('s6',txCard(m,6),'c-tx')+card('s4',noticedCard(m),'c-noticed')+card('s4',potsCard(),'c-pots')+card('s4',dueCard(m,5),'c-due');
+  else if(S.view==='cards')h=card('s7',cardStack(m),'c-stack')+card('s5',cardDetail(m),'c-cdet')+card('s7',cardsList(m),'c-clist')+card('s5',cardPays(m),'c-cpay');
   else if(S.view==='payments')h=card('',txCard(m,0),'c-tx');
   else if(S.view==='bills')h=card('',dueCard(m,0),'c-due');
   else if(S.view==='budgets')h=card('',budgetsCard(m),'c-budgets');
@@ -309,6 +312,58 @@ function biggestCard(m){
   return '<div class="head"><div><h2>Biggest payments</h2><small>'+mName(m.mo)+'</small></div></div>'+(list.length?txRows(list,false):'<div class="empty">Nothing spent yet.</div>');
 }
 
+
+/* ---------- cards: one face per card in the statements ---------- */
+const FACES=[['#9db8ff','#5b6fd6'],['#c4a8ff','#6a4fd0'],['#8fd6ff','#3d86c6'],['#ffc98f','#c9703a'],['#ff9fb8','#bd4a72'],['#9fe3d4','#3a8f86'],['#c9d0dc','#6b7690']];
+function cardList(m){
+  const by={};
+  S.tx.filter(t=>t.card&&!t.cash&&t.category!=='Transfer').forEach(t=>{(by[t.card]||(by[t.card]=[])).push(t)});
+  const lim=(S.settings&&S.settings.cardLimits)||{};
+  return Object.keys(by).map(name=>{const all=by[name],mo=all.filter(t=>t.date.startsWith(m.mo));
+    const months=new Set(all.map(t=>t.date.slice(0,7))).size||1,total=outOf(all);
+    const big=all.filter(t=>t.amount<0).sort((a,b)=>a.amount-b.amount)[0];
+    return {name,all,mo,spent:outOf(mo),total,avg:total/months,n:all.length,limit:+lim[name]||0,big}})
+    .sort((a,b)=>b.total-a.total).map((c,i)=>Object.assign(c,{face:FACES[i%FACES.length],i}));
+}
+function vstyle(pos){const vis=pos<3;return 'transform:translateY('+(pos*-14)+'px) scale('+(1-pos*.06)+');opacity:'+(vis?(pos===0?1:pos===1?.8:.55):0)+';z-index:'+(9-pos)+';pointer-events:'+(vis?'auto':'none')}
+function cardsRefresh(){const st=$('cstack');if(S.view!=='cards'||!st){return render()}
+  const m=monthData(S.month),cs=cardList(m),n=cs.length||1,sel=((S.cardIdx%n)+n)%n;
+  st.querySelectorAll('.vcard').forEach((el,i)=>{const pos=(i-sel+n)%n;el.style.cssText=vstyle(pos)+';--a:'+cs[i].face[0]+';--b:'+cs[i].face[1];el.classList.toggle('flip',pos===0&&S.flip);el.dataset.act=pos===0?'cflip':'csel'});
+  document.querySelectorAll('.cnav .dots i').forEach((d,i)=>d.classList.toggle('on',i===sel));
+  [['c-cdet',cardDetail],['c-clist',cardsList],['c-cpay',cardPays]].forEach(([id,f])=>{const el=$(id);if(el)el.innerHTML=f(m)});}
+function cardStack(m){
+  const cs=cardList(m);
+  if(!cs.length)return '<div class="head"><div><h2>Cards</h2><small>Every card in your statements</small></div></div><div class="empty">No card payments yet. Statements you import show up here, one card each.</div>';
+  const n=cs.length,sel=((S.cardIdx%n)+n)%n,c=cs[sel],sp=spendByCat(c.mo.length?c.mo:c.all),top=Object.keys(sp).sort((a,b)=>sp[b]-sp[a]).slice(0,4);
+  const face=cs.map((x,i)=>{const pos=(i-sel+n)%n;
+    const tops=Object.keys(spendByCat(x.all)).sort((a,b)=>spendByCat(x.all)[b]-spendByCat(x.all)[a]).slice(0,4),sc2=spendByCat(x.all);
+    return '<div class="vcard'+(pos===0&&S.flip?' flip':'')+'" data-act="'+(pos===0?'cflip':'csel')+'" data-id="'+i+'" tabindex="0" role="button" aria-label="'+esc(x.name)+'" style="'+vstyle(pos)+';--a:'+x.face[0]+';--b:'+x.face[1]+'"><div class="inner">'+
+      '<div class="face front"><div class="vtop"><b>'+esc(x.name)+'</b><span class="nfc">'+ic('spark')+'</span></div><span class="chip"></span>'+
+      '<div class="vbot"><div><small>Spent in '+mShort(m.mo)+'</small><b>'+fmt(x.spent)+'</b></div><div><small>This year</small><b>'+fmt(x.total,true)+'</b></div></div></div>'+
+      '<div class="face back"><b>'+esc(x.name)+' by category</b>'+tops.map(k=>'<div class="vrow"><span>'+esc(k)+'</span><span>'+fmt(sc2[k])+'</span></div>').join('')+'<small>Tap to flip back</small></div></div></div>'}).join('');
+  return '<div class="head"><div><h2>Cards</h2><small>Tap the front card to flip it, tap the ones behind to bring them forward</small></div></div>'+
+   '<div class="cstack" id="cstack">'+face+'</div>'+
+   '<div class="cnav"><button class="btn icon" data-act="cnext" data-id="-1" aria-label="Previous card">‹</button><div class="dots">'+cs.map((_,i)=>'<i'+(i===sel?' class="on"':'')+'></i>').join('')+'</div><button class="btn icon" data-act="cnext" data-id="1" aria-label="Next card">›</button></div>';
+}
+function cardDetail(m){
+  const cs=cardList(m);if(!cs.length)return '<div class="head"><h2>Card details</h2></div><div class="empty">Nothing to show yet.</div>';
+  const c=cs[((S.cardIdx%cs.length)+cs.length)%cs.length],left=c.limit?c.limit-c.spent:null,r=c.limit?Math.min(c.spent/c.limit,1):0;
+  return '<div class="head"><div><h2>'+esc(c.name)+'</h2><small>'+plural(c.n,'payment')+' in this year\'s statements</small></div>'+(c.limit&&c.spent>c.limit?'<span class="pill bad">Over limit</span>':'<span class="pill ok">On track</span>')+'</div>'+
+   '<div class="tiles2"><div class="tile"><span>Spent in '+mLong(m.mo)+'</span><b>'+fmt(c.spent)+'</b></div><div class="tile"><span>'+(c.limit?'Left this month':'Average month')+'</span><b>'+fmt(c.limit?left:c.avg)+'</b></div></div>'+
+   '<div class="tiles2"><div class="tile"><span>This year</span><b>'+fmt(c.total)+'</b></div><div class="tile"><span>Biggest payment</span><b>'+(c.big?fmt(-c.big.amount):'—')+'</b></div></div>'+
+   '<div class="cat"><div class="l"><b>Monthly limit</b><span id="lim-out" class="in">'+(c.limit?fmt(c.limit):'None set')+'</span></div><input type="range" class="range" id="lim" data-card="'+esc(c.name)+'" min="0" max="10000" step="50" value="'+c.limit+'" aria-label="Monthly limit for '+esc(c.name)+'"><div class="bar'+(c.limit&&c.spent>c.limit?' over':'')+'"><i style="width:'+(r*100).toFixed(1)+'%"></i></div><small class="sub">A reminder only. It does not change anything with your bank.</small></div>';
+}
+function cardsList(m){
+  const cs=cardList(m),sel=cs.length?((S.cardIdx%cs.length)+cs.length)%cs.length:0,mx=Math.max.apply(0,cs.map(c=>c.limit||c.spent))||1;
+  return '<div class="head"><div><h2>All cards</h2><small>How far into the month each one is</small></div></div>'+(cs.length?'<div class="list">'+cs.map((c,i)=>
+   '<div class="row click'+(i===sel?' cur':'')+'" data-act="csel" data-id="'+i+'" tabindex="0" role="button"><span class="mini" style="--a:'+c.face[0]+';--b:'+c.face[1]+'"></span><div class="t"><b>'+esc(c.name)+'</b><small>'+plural(c.mo.length,'payment')+' in '+mShort(m.mo)+'</small></div><div class="amt" style="min-width:150px"><div class="bar"><i style="width:'+Math.min(c.spent/mx*100,100).toFixed(1)+'%"></i></div><small class="sub">'+fmt(c.spent)+(c.limit?' of '+fmt(c.limit):'')+'</small></div><div></div></div>').join('')+'</div>':'<div class="empty">No cards yet.</div>');
+}
+function cardPays(m){
+  const cs=cardList(m);if(!cs.length)return '<div class="head"><h2>Latest on this card</h2></div><div class="empty">No payments yet.</div>';
+  const c=cs[((S.cardIdx%cs.length)+cs.length)%cs.length],list=(c.mo.length?c.mo:c.all).slice().sort((a,b)=>a.date<b.date?1:-1).slice(0,8);
+  return '<div class="head"><div><h2>'+esc(c.name)+' payments</h2><small>The latest '+(c.mo.length?'in '+mLong(m.mo):'on this card')+'</small></div><button class="link" data-act="view" data-id="payments">All activity</button></div>'+txRows(list,false);
+}
+
 /* ---------- accounts and data ---------- */
 function sourcesCard(){
   const by={};S.txRaw.forEach(t=>{const k=t.card||'Entered by hand',o=by[k]||(by[k]={n:0,out:0,inn:0,from:'9999',to:''});o.n++;if(t.category!=='Transfer'){if(t.amount<0)o.out-=t.amount;else if(isInc(t))o.inn+=t.amount}if(t.date<o.from)o.from=t.date;if(t.date>o.to)o.to=t.date});
@@ -409,6 +464,9 @@ async function csvPreview(flip){
 
 const col=n=>S.db.collection(n);
 const ACT={
+  csel(id){S.cardIdx=+id;S.flip=false;cardsRefresh()},
+  cflip(){S.flip=!S.flip;cardsRefresh()},
+  cnext(id){const n=cardList(monthData(S.month)).length||1;S.cardIdx=(((S.cardIdx+ +id)%n)+n)%n;S.flip=false;cardsRefresh()},
   palette(){openPalette()}, bell(){togglePop('bell')}, send(){togglePop('send')},
   prev(){if(S.month<=fyOf().lo)return;S.month=shift(S.month,-1);S.noteIdx=0;S.anim='page';render()},
   next(){if(S.month<fyOf().hi){S.month=shift(S.month,1);S.noteIdx=0;S.anim='page';render()}},
@@ -463,9 +521,10 @@ const ACT={
   async 'del-rule'(id){if(await save(col('rules').doc(id).delete(),'Rule forgotten')){if(S.rules.length)ACT.rules();else $('dlg').close()}}
 };
 document.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b||b.disabled)return;const a=b.dataset.act;if(ACT[a])ACT[a](b.dataset.id)});
-document.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target.matches&&e.target.matches('.row.click')){e.preventDefault();ACT['edit-tx'](e.target.dataset.id)}});
-document.addEventListener('input',e=>{if(e.target.id==='q'){S.q=e.target.value;refreshTx()}});
+document.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target.matches&&e.target.matches('.row.click,.vcard')){e.preventDefault();const a=e.target.dataset.act;if(ACT[a])ACT[a](e.target.dataset.id)}});
+document.addEventListener('input',e=>{if(e.target.id==='lim'){$('lim-out').textContent=+e.target.value?fmt(+e.target.value):'None set'}if(e.target.id==='q'){S.q=e.target.value;refreshTx()}});
 document.addEventListener('change',e=>{const t=e.target;
+  if(t.id==='lim'){const lim=Object.assign({},(S.settings&&S.settings.cardLimits)||{});lim[t.dataset.card]=+t.value;save(S.db.doc('settings/main').update({cardLimits:lim}));return}
   if(t.id==='fcat'){S.fcat=t.value;refreshTx()}
   else if(t.dataset&&t.dataset.acct)save(col('accounts').doc(t.dataset.acct).update({include:t.checked}),t.checked?'Counted in the joint balance':'Left out of the joint balance')
   else if(t.id==='csv-file'&&t.files[0]){const r=new FileReader();r.onload=()=>{csvText=String(r.result||'');csvPreview(false)};r.onerror=()=>toast('Could not read that file.');r.readAsText(t.files[0]);t.value=''}});

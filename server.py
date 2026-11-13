@@ -19,6 +19,7 @@ import random
 import re
 import shutil
 import socket
+import ssl
 import subprocess
 import sys
 import threading
@@ -31,7 +32,7 @@ PUBLIC = HERE / "public"
 COLLECTIONS = ("settings", "transactions", "budgets", "pots", "recurring", "accounts", "rules")
 ID_RE = re.compile(r"^[A-Za-z0-9_.~:@+-]{1,200}$")
 MAX_BODY = 8 * 1024 * 1024
-MIME = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
+MIME = {".png": "image/png", ".ico": "image/svg+xml", ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
         ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml", ".json": "application/json"}
 
 lock = threading.RLock()
@@ -356,7 +357,7 @@ class Handler(BaseHTTPRequestHandler):
                 body = json.dumps({"version": STORE["version"], "collections": STORE["collections"]}, indent=1, ensure_ascii=False).encode("utf-8")
             return self.send_bytes(200, body, "application/json; charset=utf-8",
                                    {"Content-Disposition": 'attachment; filename="finance-backup.json"'})
-        name = parts[0] if parts else "index.html"
+        name = "favicon.svg" if parts == ["favicon.ico"] else parts[0] if parts else "index.html"
         target = PUBLIC / name
         if len(parts) <= 1 and target.suffix in MIME and target.is_file() and target.parent == PUBLIC:
             return self.send_bytes(200, target.read_bytes(), MIME[target.suffix])
@@ -465,7 +466,7 @@ def advertise(name, port):
                 proc.terminate()
             proc = subprocess.Popen(cmd(ip), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) if ip else None
             if ip:
-                print("advertising http://%s:%d/ at %s" % (name, port, ip), flush=True)
+                print("advertising %s:%d at %s" % (name, port, ip), flush=True)
             current = ip
         time.sleep(30)
 
@@ -476,6 +477,8 @@ def main():
     ap.add_argument("--bind", default=os.environ.get("FINANCES_BIND", "0.0.0.0"), help="address to listen on; 127.0.0.1 keeps it to this computer")
     ap.add_argument("--name", default=os.environ.get("FINANCES_HOST", "finances.local"), help='network name to announce; "" turns announcing off')
     ap.add_argument("--data", default=os.environ.get("FINANCES_DATA", str(HERE / "data")), help="folder that holds data.json")
+    ap.add_argument("--cert", default=os.environ.get("FINANCES_CERT", ""), help="TLS certificate (PEM). With --key, the page is served over https")
+    ap.add_argument("--key", default=os.environ.get("FINANCES_KEY", ""), help="TLS private key (PEM)")
     ap.add_argument("--empty", action="store_true", help="start with no example data")
     ap.add_argument("--quiet", action="store_true", help="do not log each request")
     args = ap.parse_args()
@@ -486,9 +489,16 @@ def main():
             persist()
     if args.name:
         threading.Thread(target=advertise, args=(args.name, args.port), daemon=True).start()
-    print("serving on http://%s:%d/  data in %s" % ("localhost" if args.bind in ("0.0.0.0", "127.0.0.1") else args.bind, args.port, CFG["data"]), flush=True)
+    scheme = "https" if args.cert and args.key else "http"
+    print("serving on %s://%s:%d/  data in %s" % (scheme, "localhost" if args.bind in ("0.0.0.0", "127.0.0.1") else args.bind, args.port, CFG["data"]), flush=True)
     try:
-        ThreadingHTTPServer((args.bind, args.port), Handler).serve_forever()
+        httpd = ThreadingHTTPServer((args.bind, args.port), Handler)
+        if scheme == "https":
+            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+            ctx.load_cert_chain(args.cert, args.key)
+            httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True)
+        httpd.serve_forever()
     except KeyboardInterrupt:
         sys.exit(0)
 

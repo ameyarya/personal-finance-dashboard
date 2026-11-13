@@ -24,6 +24,7 @@ page when you are ready to enter your own.
 
 - **Overview.** Joint balance, what is safe to spend after bills, and a forecast to the end of
   the month that marks each payday and bill.
+- **Cards.** One card face per card in your statements: tap to flip, spending by month, a monthly limit reminder.
 - **Payments.** Add, edit, search, filter, delete with undo, import a bank statement, export.
 - **Bills.** Regular bills and paydays. Tick them off as they happen.
 - **Budgets.** A monthly limit per category, with a marker for where spending should be today.
@@ -58,6 +59,19 @@ data/data.json      everything you see on the page
 ```
 
 The `data/` folder is in `.gitignore`. Back up `data.json`, or use *Accounts → Download a backup*.
+
+## HTTPS
+
+Pass a certificate and key and the page is served over https on the same port:
+
+```bash
+mkcert -install                      # once, trusts a local certificate authority
+mkcert -cert-file data/cert.pem -key-file data/key.pem finances.local localhost 127.0.0.1
+python3 server.py --cert data/cert.pem --key data/key.pem
+```
+
+Other devices need the mkcert root certificate installed before they trust it. The certificate and key stay
+in `data/`, which is not in git.
 
 ## Who can reach it
 

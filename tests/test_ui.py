@@ -482,6 +482,23 @@ def test_SET03_clearing_examples_keeps_your_own_entries(page, server):
     assert [t["desc"] for t in server.docs("transactions").values()] == ["My real payment"]
 
 
+# ---------------------------------------------------------------- cards
+
+def test_CARD01_cards_screen_groups_payments_by_card(blank, empty_server):
+    for i, (card, amt) in enumerate([("Visa", -40), ("Visa", -10), ("Store card", -25)]):
+        empty_server.call("PUT", "/api/doc/transactions/c%d" % i, {"date": "2026-11-05", "desc": "Thing %d" % i, "amount": amt, "category": "Shopping", "who": "", "card": card})
+    blank.reload()
+    go(blank, "cards")
+    expect(blank.locator("#c-stack .vcard")).to_have_count(2)
+    expect(blank.locator("#c-clist .row")).to_have_count(2)
+    expect(blank.locator("#c-cdet")).to_contain_text("Visa")
+    blank.locator("#c-clist .row", has_text="Store card").click()
+    expect(blank.locator("#c-cdet")).to_contain_text("Store card")
+    expect(blank.locator("#c-cpay")).to_contain_text("Thing 2")
+    blank.locator("#c-stack .vcard[data-act=cflip]").click()
+    expect(blank.locator("#c-stack .vcard.flip")).to_have_count(1)
+
+
 # ---------------------------------------------------------------- data
 
 def test_DATA01_backup_download(page):
