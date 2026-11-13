@@ -437,3 +437,5 @@ code{font:12px ui-monospace,Menlo,monospace;background:var(--glass2);border-radi
 .vcard[data-act="cflip"]{cursor:grab}.vcard[data-act="cflip"]:active{cursor:grabbing}
 .vrow i{font-style:normal;opacity:.7;margin-right:8px;font-size:12px}
 .vrow span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1;margin-right:10px}
+
+.sl-bar{overflow:hidden}

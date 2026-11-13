@@ -1109,3 +1109,20 @@ def test_SWIPE06_a_finger_swipe_on_a_phone_works(browser, empty_server):
     page.wait_for_function("name => document.querySelector('#c-cdet h2').innerText !== name", arg=first)
     assert page.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
     context.close()
+
+
+@pytest.mark.parametrize("width", [320, 390, 1280])
+def test_SYNCWIN05_the_moving_progress_bar_stays_inside_the_window(browser, server, width):
+    p = open_page(browser, server, viewport={"width": width, "height": 700})
+    p.click("#btn-sync")
+    expect(p.locator("#synclog")).to_be_visible()
+    p.evaluate("document.getElementById('sl-bar').classList.add('ind')")          # the 'working, length unknown' state
+    assert p.evaluate("getComputedStyle(document.getElementById('sl-bar')).overflow") == "hidden"
+    p.wait_for_timeout(700)
+    box, bar, fill = p.locator(".sl-box").bounding_box(), p.locator("#sl-bar").bounding_box(), p.locator("#sl-fill").bounding_box()
+    assert bar["x"] + bar["width"] <= box["x"] + box["width"] + 0.5
+    assert p.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
+    # whatever the animation is doing, nothing of the bar is painted outside the window
+    assert p.evaluate("""() => { const b = document.getElementById('sl-bar').getBoundingClientRect(), w = document.querySelector('.sl-box').getBoundingClientRect();
+                          return b.left >= w.left - 1 && b.right <= w.right + 1 }""")
+    p.context.close()

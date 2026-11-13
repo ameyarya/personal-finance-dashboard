@@ -354,13 +354,16 @@ def drive_pull(cfg, dest):
     SYNC["proc"] = proc
     watchdog = threading.Timer(1200, proc.kill)
     watchdog.start()
-    tail = []
+    tail, last = [], ""
     try:
         for line in proc.stdout:
             line = re.sub(r"^\d{4}/\d\d/\d\d \d\d:\d\d:\d\d ", "", line.rstrip())
             if not line or "shared Google Drive client_id" in line:
                 continue
             tail.append(line)
+            if re.match(r"INFO\s*:\s+0 B / 0 B", line) or line == last:      # empty progress ticks and repeats are just noise
+                continue
+            last = line
             slog(line, "warn" if line.startswith(("ERROR", "NOTICE")) else "info")
         proc.wait()
     finally:
