@@ -112,6 +112,28 @@ def cash_rows(path, year, card_name):
         yield out
 
 
+def enrich(rows, path):
+    """Copy who-paid and notes from an earlier reconciliation (project-data.json) onto matching card rows."""
+    data = json.load(open(path))
+    key = lambda date, desc, amount, card: (date, re.sub(r"\s+", " ", desc).upper(), round(abs(float(amount)), 2), card)
+    known = {}
+    for t in data.get("transactions", []):
+        known[key(t["date"], t["description"], t["amount"], t["source"])] = t
+    hit = 0
+    for r in rows:
+        if r.get("cash"):
+            continue
+        t = known.get(key(r["date"], r["desc"], r["amount"], r["card"]))
+        if not t:
+            continue
+        hit += 1
+        r["who"] = {"Person A personal": "Person A", "Person B personal": "Person B"}.get(t.get("ownership"), "")
+        notes = [n for n in (t.get("special"), t.get("note")) if n]
+        if notes:
+            r["note"] = "; ".join(notes)
+    return hit
+
+
 def call(server, method, path, body):
     req = urllib.request.Request(server + path, data=json.dumps(body).encode(), method=method, headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req) as r:
@@ -127,6 +149,8 @@ def main():
     ap.add_argument("--opening", type=float, default=0.0, help="total cash in all cash accounts on 1 January")
     ap.add_argument("--year", type=int, default=2025)
     ap.add_argument("--server", default="http://localhost:8770")
+    ap.add_argument("--enrich", metavar="JSON", help="project-data.json from an earlier reconciliation: adds who-paid and notes")
+    ap.add_argument("--members", default="Me", help="comma-separated names for the Who list")
     ap.add_argument("--dry", action="store_true", help="print a summary and change nothing")
     a = ap.parse_args()
 
@@ -134,6 +158,8 @@ def main():
     for spec in a.extra_cash:
         path, _, name = spec.partition("=")
         rows += list(cash_rows(path, a.year, name or path))
+    if a.enrich:
+        print("enriched %d card rows from %s" % (enrich(rows, a.enrich), a.enrich))
     cash_net = sum(r["amount"] for r in rows if r.get("cash"))
     print("cash accounts: opening %.2f + movement %.2f = closing %.2f" % (a.opening, cash_net, a.opening + cash_net))
     income = sum(r["amount"] for r in rows if r["category"] == "Income")
@@ -153,7 +179,7 @@ def main():
     store = json.load(urllib.request.urlopen(a.server + "/api/data"))["collections"]
     writes = [{"op": "delete", "col": col, "id": i} for col in ("transactions", "pots", "recurring", "budgets", "accounts", "rules") for i in store.get(col, {})]
     writes.append({"op": "set", "col": "settings", "id": "main",
-                   "data": {"household": "Household", "currency": "USD", "opening": a.opening, "members": ["Me"], "fiscalYear": a.year}})
+                   "data": {"household": "Household", "currency": "USD", "opening": a.opening, "members": [m.strip() for m in a.members.split(",") if m.strip()], "fiscalYear": a.year}})
     for r in rows:
         i = r.pop("id")
         writes.append({"op": "set", "col": "transactions", "id": i, "data": r})
