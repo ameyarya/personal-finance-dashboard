@@ -617,18 +617,17 @@ const ACT={
   settings(){const c=cfg();openForm({title:'Settings',fields:[
      {id:'household',label:'Household name',value:c.household},
      {id:'currency',label:'Currency',options:Object.keys(LOCALE),value:c.currency},
-     {id:'opening',label:'Opening balance, before the first transaction recorded here',type:'number',min:-1e12,value:c.opening},
      {id:'members',label:'People, separated by commas',value:c.members.join(', ')},
      {html:'<div class="eyebrow" style="margin-top:6px">Monthly budgets (leave blank for none)</div><div class="two">'+BUDGET_CATS.map(k=>'<div class="fld"><label for="b-'+k+'">'+k+'</label><input id="b-'+k+'" type="number" min="0" step="any" inputmode="decimal" value="'+(S.budgets[k]&&S.budgets[k].limit||'')+'"></div>').join('')+'</div>'}],
     async onSubmit(v){const members=v.members.split(',').map(s=>s.trim()).filter(Boolean).slice(0,8);
-      const writes=[{op:'set',col:'settings',id:'main',data:Object.assign({},S.settings||{},{household:v.household||DEF.household,currency:v.currency,opening:parseFloat(v.opening)||0,members:members.length?members:DEF.members})}];
+      const writes=[{op:'set',col:'settings',id:'main',data:Object.assign({},S.settings||{},{household:v.household||DEF.household,currency:v.currency,members:members.length?members:DEF.members})}];
       BUDGET_CATS.forEach(k=>{const lim=parseFloat($('b-'+k).value)||0,old=S.budgets[k]&&S.budgets[k].limit||0;if(lim!==old)writes.push(lim?{op:'set',col:'budgets',id:k,data:{limit:lim}}:{op:'delete',col:'budgets',id:k})});
       save(S.db.batch(writes),'Settings saved')}})},
   'clear-ask'(){S.confirmClear=true;render()}, 'clear-no'(){S.confirmClear=false;render()},
   async 'clear-yes'(){S.confirmClear=false;
     const writes=[].concat(S.txRaw.filter(t=>t.sample).map(t=>({op:'delete',col:'transactions',id:t.id})),S.rec.filter(r=>r.sample).map(r=>({op:'delete',col:'recurring',id:r.id})),Object.keys(S.budgets).filter(k=>S.budgets[k].sample).map(k=>({op:'delete',col:'budgets',id:k})));
     if(S.settings&&S.settings.sample){const s=Object.assign({},S.settings,{opening:0,members:DEF.members});delete s.sample;writes.push({op:'set',col:'settings',id:'main',data:s})}
-    save(S.db.batch(writes),'Examples cleared. Set your opening balance and names in Settings.')},
+    save(S.db.batch(writes),'Examples cleared. Set your names in Settings.')},
   rules(){const d=$('dlg');d.className='';
     d.innerHTML='<form id="dlg-form"><h2>Category rules</h2><div class="list">'+S.rules.map(r=>'<div class="row" style="grid-template-columns:minmax(0,1fr) auto auto"><div class="t"><b>'+esc(r.match)+'</b><small>filed under '+esc(r.category)+'</small></div><span></span><button type="button" class="x" data-act="del-rule" data-id="'+esc(r.id)+'" aria-label="Forget rule for '+esc(r.match)+'">×</button></div>').join('')+'</div><div class="dlg-acts"><div><button type="button" class="btn" id="dlg-cancel">Close</button></div></div></form>';
     $('dlg-cancel').onclick=()=>d.close();if(!d.open)d.showModal()},

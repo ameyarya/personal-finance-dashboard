@@ -229,3 +229,57 @@ def test_chase_checking_without_a_readable_period_or_without_the_markers():
     assert st.parse_chase_checking("Chase CHECKING SUMMARY TRANSACTION DETAIL Foo 1, 2025 through Foo 2, 2025") == []
     no_end = CHASE.replace("Ending Balance $29.31 IN CASE OF ERRORS", "").replace("29.31 ", "29.31")
     assert len(st.parse_chase_checking(no_end)) >= 3
+
+
+# ---------------------------------------------------------------- Discover, Chase credit card, payment history
+
+DISCOVER_MONTH = ("DISCOVER IT OPEN TO CLOSE DATE: 03/05/2024 - 04/04/2024 TRANS. DATE PAYMENTS AND CREDITS AMOUNT TRANS. DATE PURCHASES MERCHANT CATEGORY AMOUNT "
+                  "2024 TOTALS Cashback Bonus +$0.4004/01 DIRECTPAY FULL BALANCE -$195.00 SEE DETAILS OF YOUR NEXT DIRECTPAY BELOW 03/09 PP*SALON SAN JOSE CA Services $40.25 APPLE PAY ENDING IN 1234 "
+                  "PREVIOUS BALANCE $14.20")
+DISCOVER_YEAR = ("Discover Last 12 Months Summary Transactions Trans. Date Post Date Description Amount Category 01/18/25 01/18/25 PHONE BILL PAYMENT 800-555-0100 TX $ 47.60 Services "  # privacy: allow
+                 "02/01/25 02/01/25 DIRECTPAY FULL BALANCE SEE DETAILS OF YOUR NEXT DIRECTPAY BELOW $ -12.97 Payments and Credits 04/16/25 04/16/25 SOME APP SUBSCR CA $ 20.00 Merchandise")
+CHASE_CARD = ("Chase ACCOUNT SUMMARY Payment Due Date: 11/07/25 Minimum Payment Due: $35.00 Opening/Closing Date 09/11/25 - 10/10/25 ACCOUNT ACTIVITY "
+              "PAYMENTS AND OTHER CREDITS Date of Transaction Merchant Name or Transaction Description $ Amount 09/20 Payment Thank You - Web -50.00 "
+              "PURCHASE 09/21 SHOP ONE Example.com WA 110.07 Order Number 111-1111111-1111111 10/06 SHOP TWO Example.com WA 8.17 Order Number D01-1 "
+              "Total fees charged in 2025 $0.00 Total interest charged in 2025 $0.00")
+
+
+def test_discover_monthly_reads_the_payment_and_the_purchase_even_when_glued_to_other_text():
+    rows = st.parse_text(DISCOVER_MONTH)
+    assert [(r["date"], r["desc"], r["amount"], r.get("category")) for r in rows] == [
+        ("2024-04-01", "DIRECTPAY FULL BALANCE", 195.0, "Transfer"), ("2024-03-09", "PP*SALON SAN JOSE CA", -40.25, None)]
+    assert all(r["card"] == "Discover" for r in rows)
+
+
+def test_discover_without_a_period_or_transactions_header():
+    assert st.parse_discover("nothing relevant") is None
+    assert st.parse_discover("Discover but no billing dates") is None
+    assert st.parse_discover("Discover OPEN TO CLOSE DATE: 03/05/2024 - 04/04/2024 and no table") == []
+
+
+def test_discover_last_twelve_months_export():
+    rows = st.parse_text(DISCOVER_YEAR)
+    assert [(r["date"], r["amount"], r.get("category")) for r in rows] == [("2025-01-18", -47.6, None), ("2025-02-01", 12.97, "Transfer"), ("2025-04-16", -20.0, None)]
+    assert rows[1]["desc"] == "DIRECTPAY FULL BALANCE"
+
+
+def test_chase_card_purchases_are_negative_payments_positive_and_order_numbers_dropped():
+    rows = st.parse_text(CHASE_CARD)
+    assert [(r["date"], r["amount"]) for r in rows] == [("2025-09-20", 50.0), ("2025-09-21", -110.07), ("2025-10-06", -8.17)]
+    assert all("Order Number" not in r["desc"] and r["card"] == "Chase" for r in rows)
+    assert rows[0]["category"] == "Transfer"
+
+
+def test_chase_card_with_no_activity_or_no_dates_is_recognised_but_empty():
+    quiet = "Chase ACCOUNT SUMMARY Minimum Payment Due: $0.00 Payment Due Date: 04/07/24"
+    assert st.parse_chase_card(quiet) == []
+    assert st.parse_chase_card("Chase ACCOUNT SUMMARY Minimum Payment Due: $0 Merchant Name or Transaction Description 01/02 X 1.00") == []
+    assert st.parse_chase_card("a different statement") is None
+    statement_date = CHASE_CARD.replace("Opening/Closing Date 09/11/25 - 10/10/25", "Statement Date: 10/10/25")
+    assert len(st.parse_chase_card(statement_date)) == 3
+    no_stop = CHASE_CARD.replace("Total fees charged in 2025", "").replace("Total interest charged in 2025 $0.00", "")
+    assert len(st.parse_chase_card(no_stop)) >= 2
+
+
+def test_a_payment_history_report_is_recognised_and_adds_nothing():
+    assert st.parse_text("Payment History Report All Payments Date Amount Dec 2, 2024 $3,429.15 Online Completed") == []

@@ -228,7 +228,63 @@ def parse_chase_checking(text):
     return out
 
 
-PARSERS = (parse_chase_checking, parse_wells_fargo, parse_bofa, parse_wealthfront, parse_capital_one_year_end, parse_capital_one_monthly, parse_amex)
+# ---------------------------------------------------------------- Discover, Chase credit cards
+
+DISCOVER_CATEGORIES = r"(?:Services|Merchandise|Restaurants|Supermarkets|Gasoline|Travel/Entertainment|Medical Services|Education|Home Improvement|Government Services|Awards and Rebate Credits|Payments and Credits)"
+
+
+DIRECTPAY_NOTE = r"\s*SEE DETAILS OF YOUR NEXT DIRECTPAY BELOW.*$"
+
+
+def parse_discover(text):
+    """Discover monthly statements and the 'Last 12 Months' export. Charges are shown as $ 12.34, credits as -$ 12.34."""
+    if "discover" not in text.lower():
+        return None
+    out = []
+    if "Last 12 Months Summary" in text:
+        for r in re.finditer(r"(\d\d)/(\d\d)/(\d\d) \d\d/\d\d/\d\d (.+?) \$ (-?%s)(?: %s)?(?= \d\d/\d\d/\d\d \d\d/\d\d/\d\d|$)" % (NUM, DISCOVER_CATEGORIES), text):
+            out.append(row(iso(2000 + int(r.group(3)), int(r.group(1)), int(r.group(2))), re.sub(DIRECTPAY_NOTE, "", r.group(4)), -money(r.group(5)), "Discover"))
+        return out
+    period = re.search(r"OPEN TO CLOSE DATE: (\d\d)/(\d\d)/(\d{4}) - (\d\d)/(\d\d)/(\d{4})", text)
+    if not period:
+        return None
+    end = dt.date(int(period.group(6)), int(period.group(4)), int(period.group(5)))
+    body = text[text.find("TRANS. DATE"):] if "TRANS. DATE" in text else ""
+    for r in re.finditer(r"(\d\d)/(\d\d) ([A-Za-z*#][^$]*?) (-?)\$(%s)" % NUM, body):
+        desc = re.sub(DIRECTPAY_NOTE, "", re.sub(r"\s*%s$" % DISCOVER_CATEGORIES, "", r.group(3)))
+        amount = money(r.group(5))
+        out.append(row(with_year(int(r.group(1)), int(r.group(2)), end), desc, amount if r.group(4) else -amount, "Discover"))
+    return out
+
+
+CHASE_CARD_ROW = re.compile(r"(?<![\d/])(\d\d)/(\d\d) (.+?) (-?%s)(?= \d\d/\d\d | [A-Z][A-Z ]{7,}|\s*$)" % NUM)
+
+
+def parse_chase_card(text):
+    """Chase credit cards (Amazon Prime and similar): 'MM/DD merchant amount' lines, purchases positive, payments negative."""
+    if not ("Chase" in text and "ACCOUNT SUMMARY" in text and "Minimum Payment Due" in text):
+        return None
+    start = text.find("Merchant Name or Transaction Description")
+    if start < 0:
+        return []                                         # a month with no activity
+    stop = min([i for i in (text.find("Total fees charged in", start), text.find("INTEREST CHARGES", start)) if i >= 0] or [len(text)])
+    when = re.search(r"Opening/Closing Date \d\d/\d\d/\d\d - (\d\d)/(\d\d)/(\d\d)", text) or re.search(r"Statement Date: (\d\d)/(\d\d)/(\d\d)", text)
+    if not when:
+        return []
+    end = dt.date(2000 + int(when.group(3)), int(when.group(1)), int(when.group(2)))
+    body = re.sub(r"\s+", " ", re.sub(r"Order Number \S+", "", text[start:stop])).rstrip()
+    out = []
+    for r in CHASE_CARD_ROW.finditer(body):
+        out.append(row(with_year(int(r.group(1)), int(r.group(2)), end), r.group(3), -money(r.group(4)), "Chase"))
+    return out
+
+
+def parse_payment_history(text):
+    """A card's list of payments made TO it. Those payments already appear on the card statements and on the bank side, so there is nothing new here."""
+    return [] if "Payment History Report" in text else None
+
+
+PARSERS = (parse_payment_history, parse_chase_checking, parse_wells_fargo, parse_bofa, parse_wealthfront, parse_capital_one_year_end, parse_capital_one_monthly, parse_amex, parse_discover, parse_chase_card)
 
 
 def parse_text(text, hint=""):
