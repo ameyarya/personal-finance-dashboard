@@ -1,0 +1,7 @@
+#!/usr/bin/env python3
+"""Refuse a commit that would record personal information. See tools/privacy_scan.py."""
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
+import privacy_scan
+sys.exit(privacy_scan.main(["--staged"]))

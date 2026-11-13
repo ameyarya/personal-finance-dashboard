@@ -14,3 +14,4 @@ test-results/
 # local rules and statement text never go into git
 *.local.json
 *.psv
+.privacy-terms.local

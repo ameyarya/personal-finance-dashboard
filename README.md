@@ -151,6 +151,20 @@ cp deploy/finance-dashboard.service ~/.config/systemd/user/
 systemctl --user enable --now finance-dashboard
 ```
 
+## Keeping personal information out of git
+
+Every clone should run `sh tools/install-hooks.sh` once. It turns on three git hooks (in `.githooks/`) that
+refuse a commit, a commit message or a push containing personal information:
+
+- your own private terms, listed in `.privacy-terms.local` (git ignores that file; `tools/privacy-terms.example`
+  shows the format): names, employer, landlord, street, merchants, account digits;
+- anything personal in any project: email addresses, phone numbers, card and social security numbers, tokens,
+  home-folder paths and home-network addresses;
+- statement and credential files: pdf, csv, xlsx, certificates, `users.json`, `data/`, `*.local` files.
+
+The report says where and what kind, never the value. CI runs the generic checks over every commit. Examples
+and tests use invented names and numbers only; real figures live in `data/` and in `*.local` files.
+
 ## Tests
 
 ```bash

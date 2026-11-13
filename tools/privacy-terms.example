@@ -1,0 +1,7 @@
+# Copy to .privacy-terms.local (git ignores that file) and list what must never reach git, one per line.
+# Matching ignores case. Start a line with "re:" for a regular expression.
+# Examples (replace with your own):
+#   Jane Doe
+#   Acme Corporation
+#   Maple Street
+#   re:\b\d{4} ?\d{4} ?\d{4} ?1234\b
