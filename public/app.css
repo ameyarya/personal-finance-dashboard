@@ -292,13 +292,14 @@ dialog[open]::backdrop{background:rgba(0,0,0,.55)}
 :root[data-theme="light"]{--spec:inset 0 1px 0 rgba(255,255,255,.9),inset 0 -1px 0 rgba(255,255,255,.4),inset 0 0 18px rgba(255,255,255,.35)}
 @media (prefers-color-scheme: light){:root:not([data-theme="dark"]){--spec:inset 0 1px 0 rgba(255,255,255,.9),inset 0 -1px 0 rgba(255,255,255,.4),inset 0 0 18px rgba(255,255,255,.35)}}
 .btn.primary,.seg button.on,.logo,.navpill{background:linear-gradient(160deg,color-mix(in srgb,var(--accent) 38%,rgba(255,255,255,.12)),var(--tint));
-  color:var(--fg);border:1px solid rgba(255,255,255,.38);-webkit-backdrop-filter:var(--glassfx);backdrop-filter:var(--glassfx);box-shadow:var(--spec),0 8px 24px -10px var(--accent)}
+  color:var(--fg);border:1px solid rgba(255,255,255,.38);box-shadow:var(--spec),0 8px 24px -10px var(--accent)}
 .btn.primary:hover{filter:none;background:linear-gradient(160deg,color-mix(in srgb,var(--accent) 50%,rgba(255,255,255,.16)),var(--tint-hi))}
 .navpill{box-shadow:var(--spec),0 8px 22px -10px var(--accent)}
 #nav button.on,.logo{color:var(--fg)}
 .logo svg{filter:drop-shadow(0 1px 2px rgba(0,0,0,.25))}
 .seg button.on{box-shadow:var(--spec)}
-.card,.safe,.tile,.monthnav,.btn,.hint,.banner,.seg{box-shadow:var(--spec);-webkit-backdrop-filter:blur(14px) saturate(1.5);backdrop-filter:blur(14px) saturate(1.5)}
+.card,.safe,.tile,.monthnav,.btn,.hint,.banner,.seg{box-shadow:var(--spec)}
+.card{-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
 .btn.icon,.monthnav .btn.icon{box-shadow:none}
 .card{background:linear-gradient(155deg,rgba(255,255,255,.09),rgba(255,255,255,.03) 55%,rgba(255,255,255,.05));border-color:rgba(255,255,255,.16)}
 :root[data-theme="light"] .card{background:linear-gradient(155deg,rgba(255,255,255,.75),rgba(255,255,255,.45))}
@@ -322,7 +323,7 @@ kbd{font:600 11px var(--body);color:var(--muted);border:1px solid var(--line);bo
 #btn-bell{position:relative}
 #btn-bell.has::after{content:"";position:absolute;top:9px;right:10px;width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 2px var(--bg),0 0 10px var(--accent);animation:pulse 2s ease-in-out infinite}
 .avatar{width:44px;height:44px;border-radius:50%;flex:none;border:1px solid rgba(255,255,255,.4);cursor:pointer;font:600 14px var(--display);color:var(--fg);
-  background:linear-gradient(160deg,color-mix(in srgb,var(--accent) 45%,rgba(255,255,255,.2)),var(--tint));box-shadow:var(--spec);-webkit-backdrop-filter:var(--glassfx);backdrop-filter:var(--glassfx);transition:transform .3s var(--spring)}
+  background:linear-gradient(160deg,color-mix(in srgb,var(--accent) 45%,rgba(255,255,255,.2)),var(--tint));box-shadow:var(--spec);transition:transform .3s var(--spring)}
 .avatar:hover{transform:scale(1.08) rotate(-4deg)} .avatar:active{transform:scale(.94)}
 #pop{position:absolute;top:calc(100% + 10px);right:0;width:min(360px,calc(100vw - 32px));z-index:25;border:1px solid var(--line);border-radius:18px;padding:8px;
   background:color-mix(in srgb,var(--bg) 70%,transparent);-webkit-backdrop-filter:blur(30px) saturate(1.8);backdrop-filter:blur(30px) saturate(1.8);box-shadow:var(--spec),0 24px 60px -18px rgba(0,0,0,.6)}

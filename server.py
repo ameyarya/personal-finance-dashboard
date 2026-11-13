@@ -497,7 +497,18 @@ def main():
             ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
             ctx.minimum_version = ssl.TLSVersion.TLSv1_2
             ctx.load_cert_chain(args.cert, args.key)
-            httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True)
+            plain_finish = httpd.finish_request
+
+            def finish_request(request, client_address):
+                """Do the TLS handshake on the connection's own thread, so an idle browser connection cannot hold up everyone else."""
+                try:
+                    request.settimeout(10)
+                    request = ctx.wrap_socket(request, server_side=True)
+                    request.settimeout(None)
+                except (OSError, ssl.SSLError):
+                    return
+                plain_finish(request, client_address)
+            httpd.finish_request = finish_request
         httpd.serve_forever()
     except KeyboardInterrupt:
         sys.exit(0)
