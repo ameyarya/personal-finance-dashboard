@@ -49,12 +49,13 @@ const plural=(n,one,many)=>n+' '+(n===1?one:(many||one+'s'));
 /* ---------- derived figures ---------- */
 function derive(){const off=new Set(S.accounts.filter(a=>a.include===false).map(a=>a.id));S.tx=S.txRaw.filter(t=>t.date&&!(t.account&&off.has(t.account)))}
 const counted=()=>S.accounts.filter(a=>a.include!==false);
-function currentBalance(){const a=counted();return a.length?sum(a,x=>+x.balance||0):(+cfg().opening||0)+sum(S.tx,t=>+t.amount||0)}
+const cashOnly=a=>S.tx.some(t=>t.cash)?a.filter(t=>t.cash):a;
+function currentBalance(){const a=counted();return a.length?sum(a,x=>+x.balance||0):(+cfg().opening||0)+sum(cashOnly(S.tx),t=>+t.amount||0)}
 function monthData(mo){
   const N=daysIn(mo),cur=mo===YM,last=cur?+TODAY.slice(8):N;
   const mtx=S.tx.filter(t=>t.date.startsWith(mo));
-  let bal=currentBalance()-sum(S.tx.filter(t=>t.date>=mo+'-01'),t=>+t.amount||0);
-  const byDay=Array(N+2).fill(0); mtx.forEach(t=>{byDay[Math.min(+t.date.slice(8),N)]+=+t.amount||0});
+  let bal=currentBalance()-sum(cashOnly(S.tx.filter(t=>t.date>=mo+'-01')),t=>+t.amount||0);
+  const byDay=Array(N+2).fill(0); cashOnly(mtx).forEach(t=>{byDay[Math.min(+t.date.slice(8),N)]+=+t.amount||0});
   const actual=[]; for(let d=1;d<=last;d++){bal+=byDay[d];actual.push({d,v:bal})}
   const items=S.rec.map(r=>Object.assign({},r,{due:Math.min(+r.day||1,N),paid:mtx.some(t=>t.recId===r.id)})).sort((a,b)=>a.due-b.due);
   const fc=[],marks=[];
@@ -151,11 +152,11 @@ function balanceCard(m){
   if(m.cur){
     const wk=iso(new Date(NOW.getFullYear(),NOW.getMonth(),NOW.getDate()-6)),yr=TODAY.slice(0,4);
     tiles=[['Today',outOf(S.tx.filter(t=>t.date===TODAY))],['This week',outOf(S.tx.filter(t=>t.date>=wk&&t.date<=TODAY))],['This month',m.out],['This year',outOf(S.tx.filter(t=>t.date.startsWith(yr)))]];
-    const pm=shift(YM,-1),cut=pm+'-'+pad(Math.min(m.last,daysIn(pm))),was=currentBalance()-sum(S.tx.filter(t=>t.date>cut),t=>+t.amount||0);
+    const pm=shift(YM,-1),cut=pm+'-'+pad(Math.min(m.last,daysIn(pm))),was=currentBalance()-sum(cashOnly(S.tx.filter(t=>t.date>cut)),t=>+t.amount||0);
     if(was){const p=Math.round((m.bal-was)/Math.abs(was)*100);chg='<div class="sub" style="margin-top:6px"><span class="pill '+(p>=0?'ok':'warn')+'">'+(p>=0?'↑ ':'↓ ')+Math.abs(p)+'%</span> against a month ago</div>'}
   } else tiles=[['In',m.inc],['Out',m.out],['Kept',m.inc-m.out],['Bills paid',m.items.filter(i=>i.paid&&i.amount<0).length]];
   const end=m.fc.length?m.fc[m.fc.length-1].v:null,n=counted().length;
-  return '<div class="head"><div><h2>'+(S.settings&&S.settings.fiscalYear?'Running total at the end of '+mLong(m.mo):m.cur?'Joint balance':'Balance at the end of '+mLong(m.mo))+'</h2><small>'+(S.settings&&S.settings.fiscalYear?'Starts from the opening balance in Settings':m.cur?'Spent, by period':mName(m.mo))+'</small></div></div>'+
+  return '<div class="head"><div><h2>'+(S.settings&&S.settings.fiscalYear?'Cash balance at the end of '+mLong(m.mo):m.cur?'Joint balance':'Balance at the end of '+mLong(m.mo))+'</h2><small>'+(S.settings&&S.settings.fiscalYear?'Wealthfront Cash and Bank of America':m.cur?'Spent, by period':mName(m.mo))+'</small></div></div>'+
    '<div class="balrow"><div><div class="big" id="balance" data-n="'+m.bal+'">'+fmt(m.bal)+'</div>'+chg+'</div><div class="tiles">'+tiles.map(t=>'<div class="tile"><span>'+t[0]+'</span><b'+(t[0]==='Bills paid'?'>'+t[1]:' data-n="'+t[1]+'">'+fmt(t[1]))+'</b></div>').join('')+'</div></div>'+
    '<div id="chart"></div>'+
    '<div class="legend"><span><i class="lg-line"></i>Balance</span>'+(m.fc.length?'<span><i class="lg-dot"></i>Forecast</span><span><i class="lg-pt" style="background:var(--accent)"></i>Payday</span><span><i class="lg-pt" style="background:var(--out)"></i>Bill</span><span class="end">'+mShort(m.mo)+' '+m.N+'<b id="month-end" data-n="'+end+'">'+fmt(end)+'</b></span>':'')+'</div>';

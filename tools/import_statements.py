@@ -4,6 +4,8 @@
 Two kinds of input, both pipe-separated text, one row per line (descriptions may contain commas):
   --cards         date|description|amount|source-category|card      credit cards, positive = spending
   --cash          m/d/yyyy|description|type|amount                   a cash account, positive = money in
+  --extra-cash    same layout, another cash account (repeat for each one)
+Cash rows count towards the balance; card rows do not (cards are settled by the card payments in the cash account).
 
 Everything already in the dashboard's data is replaced (the example data and any earlier import go).
 Card payments and moves between your own accounts are filed as Transfer so they are not counted twice.
@@ -33,7 +35,7 @@ FALLBACK = {"Dining": "Dining", "Food/Drink": "Dining", "Food & Drink": "Dining"
             "Personal Care": "Health", "Health": "Health", "Entertainment": "Fun", "Travel": "Travel", "Pets": "Pets",
             "Insurance/Financial": "Insurance", "Auto/Transportation": "Transport", "Automotive": "Transport", "Bills/Utilities": "Utilities"}
 CARD_PAYMENT = re.compile(r"DIRECTPAY|AUTOPAY PAYMENT|CAPITAL ONE AUTOPAY|PAYMENT THANK YOU|AUTOMATIC PAYMENT")
-CASH_TRANSFER = re.compile(r"WF CREDIT CARD|CAPITAL ONE-CRCARDPMT|AMEX EPAYMENT|DISCOVER-E-PAYMENT|BANK OF AMERICA|JOINT CASH")
+CASH_TRANSFER = re.compile(r"WF CREDIT CARD|CAPITAL ONE-CRCARDPMT|AMEX EPAYMENT|DISCOVER-E-PAYMENT|BANK OF AMERICA|JOINT CASH|WEALTHFRONT TRANSFER|ALLY TRANSFER|APPLE SAVINGS TRANSFER")
 
 
 def categorize(desc, source_cat):
@@ -90,8 +92,10 @@ def cash_rows(path, year, card_name):
             out.update(category="Other", desc="Apple Card payment")
         elif "PERSONAL INVESTMENT" in up:
             out.update(category="Savings")
-        elif re.search(r"PAYROLL|DIRECT DEP|SALARY|INTEREST", up):
+        elif re.search(r"PAYROLL|DIRECT DEP|SALARY|INTEREST|TAX REFUND", up):
             out.update(category="Income")
+        elif "ATM" in up:
+            out.update(category="Other", desc="ATM cash withdrawal")
         elif amount > 0:   # reimbursements and cash-outs: keep them as refunds so they reduce spending
             out.update(category="Other", refund=True)
         elif up.startswith("ATT-"):
@@ -104,7 +108,7 @@ def cash_rows(path, year, card_name):
             out.update(category="Other", desc=re.sub(r"-\d{6,}.*$", "", desc))
         key = (date, desc, amount)
         seen[key] = seen.get(key, 0) + 1
-        out.update(date=date, card=card_name, who="", source="statement", id=doc_id(*key, seen[key], "cash"))
+        out.update(date=date, card=card_name, cash=True, who="", source="statement", id=doc_id(*key, seen[key], "cash", card_name))
         yield out
 
 
@@ -119,12 +123,19 @@ def main():
     ap.add_argument("--cards", required=True)
     ap.add_argument("--cash", required=True)
     ap.add_argument("--cash-name", default="Wealthfront Cash")
+    ap.add_argument("--extra-cash", action="append", default=[], metavar="FILE=NAME", help="another cash account, e.g. bofa.psv=Bank of America")
+    ap.add_argument("--opening", type=float, default=0.0, help="total cash in all cash accounts on 1 January")
     ap.add_argument("--year", type=int, default=2025)
     ap.add_argument("--server", default="http://localhost:8770")
     ap.add_argument("--dry", action="store_true", help="print a summary and change nothing")
     a = ap.parse_args()
 
     rows = list(card_rows(a.cards, a.year)) + list(cash_rows(a.cash, a.year, a.cash_name))
+    for spec in a.extra_cash:
+        path, _, name = spec.partition("=")
+        rows += list(cash_rows(path, a.year, name or path))
+    cash_net = sum(r["amount"] for r in rows if r.get("cash"))
+    print("cash accounts: opening %.2f + movement %.2f = closing %.2f" % (a.opening, cash_net, a.opening + cash_net))
     income = sum(r["amount"] for r in rows if r["category"] == "Income")
     spend = sum(-r["amount"] for r in rows if r["amount"] < 0 and r["category"] != "Transfer")
     refunds = sum(r["amount"] for r in rows if r.get("refund"))
@@ -142,7 +153,7 @@ def main():
     store = json.load(urllib.request.urlopen(a.server + "/api/data"))["collections"]
     writes = [{"op": "delete", "col": col, "id": i} for col in ("transactions", "pots", "recurring", "budgets", "accounts", "rules") for i in store.get(col, {})]
     writes.append({"op": "set", "col": "settings", "id": "main",
-                   "data": {"household": "Household", "currency": "USD", "opening": 0, "members": ["Me"], "fiscalYear": a.year}})
+                   "data": {"household": "Household", "currency": "USD", "opening": a.opening, "members": ["Me"], "fiscalYear": a.year}})
     for r in rows:
         i = r.pop("id")
         writes.append({"op": "set", "col": "transactions", "id": i, "data": r})
