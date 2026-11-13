@@ -27,7 +27,9 @@ const DEF={household:'Our household',currency:'USD',opening:0,members:['You','Pa
 const pad=n=>String(n).padStart(2,'0');
 const iso=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
 const NOW=new Date(), TODAY=iso(NOW), YM=TODAY.slice(0,7);
-const fyOf=()=>{const y=S.settings&&+S.settings.fiscalYear;return y?{lo:y+'-01',hi:y+'-12'}:{lo:'0000-00',hi:YM}};
+const fromStatements=()=>!!(S.settings&&S.settings.fiscalYear)||S.txRaw.some(t=>t.source==='statement'||t.source==='pdf');
+const fyOf=()=>{if(!fromStatements()||!S.tx.length)return {lo:'0000-00',hi:YM};const ms=S.tx.filter(t=>t.date).map(t=>t.date.slice(0,7)).sort();return {lo:ms[0],hi:ms[ms.length-1]}};
+const openDate=()=>(S.settings&&(S.settings.openingDate||(S.settings.fiscalYear?S.settings.fiscalYear+'-01-01':'')))||'';
 const hashView=()=>{const h=location.hash.slice(1);return VIEWS.some(v=>v[0]===h)?h:'overview'};
 const S={session:{},sync:{},period:'month',cardIdx:0,flip:false,settings:null,txRaw:[],tx:[],budgets:{},rec:[],accounts:[],rules:[],ready:false,db:null,month:YM,view:hashView(),span:6,noteIdx:0,note:'',confirmClear:false,q:'',fcat:'',anim:'page'};
 const $=id=>document.getElementById(id);
@@ -54,7 +56,7 @@ const plural=(n,one,many)=>n+' '+(n===1?one:(many||one+'s'));
 /* ---------- derived figures ---------- */
 function derive(){const off=new Set(S.accounts.filter(a=>a.include===false).map(a=>a.id));S.tx=S.txRaw.filter(t=>t.date&&!(t.account&&off.has(t.account)))}
 const counted=()=>S.accounts.filter(a=>a.include!==false);
-const cashOnly=a=>S.tx.some(t=>t.cash)?a.filter(t=>t.cash):a;
+const cashOnly=a=>S.tx.some(t=>t.cash)?a.filter(t=>t.cash&&(!openDate()||t.date>=openDate())):a;
 const patchSettings=p=>S.settings?S.db.doc('settings/main').update(p):S.db.doc('settings/main').set(Object.assign({},DEF,p));
 function savePrefs(){try{localStorage.setItem('prefs',JSON.stringify({period:S.period,month:S.month}))}catch(e){}
   if(S.db&&S.settings){const p=S.settings.prefs||{};if(p.period!==S.period||p.month!==S.month)patchSettings({prefs:{period:S.period,month:S.month}}).catch(()=>{})}}
@@ -330,7 +332,7 @@ function biggestCard(m){
 const FACES=[['#9db8ff','#5b6fd6'],['#c4a8ff','#6a4fd0'],['#8fd6ff','#3d86c6'],['#ffc98f','#c9703a'],['#ff9fb8','#bd4a72'],['#9fe3d4','#3a8f86'],['#c9d0dc','#6b7690']];
 function cardList(m){
   const by={};
-  S.tx.filter(t=>t.card&&!t.cash&&t.category!=='Transfer').forEach(t=>{(by[t.card]||(by[t.card]=[])).push(t)});
+  const yr=m.mo.slice(0,4);S.tx.filter(t=>t.card&&!t.cash&&t.category!=='Transfer'&&t.date.startsWith(yr)).forEach(t=>{(by[t.card]||(by[t.card]=[])).push(t)});
   const lim=(S.settings&&S.settings.cardLimits)||{},meta=(S.settings&&S.settings.cardMeta)||{};
   return Object.keys(by).map(name=>{const all=by[name],mo=all.filter(t=>t.date.startsWith(m.mo));
     const months=new Set(all.map(t=>t.date.slice(0,7))).size||1,total=outOf(all);
@@ -382,8 +384,8 @@ function cardPays(m){
 function sourcesCard(){
   const by={};S.txRaw.forEach(t=>{const k=t.card||'Entered by hand',o=by[k]||(by[k]={n:0,out:0,inn:0,from:'9999',to:''});o.n++;if(t.category!=='Transfer'){if(t.amount<0)o.out-=t.amount;else if(isInc(t))o.inn+=t.amount}if(t.date<o.from)o.from=t.date;if(t.date>o.to)o.to=t.date});
   const ks=Object.keys(by).sort((a,b)=>by[b].n-by[a].n);
-  const fy=S.settings&&S.settings.fiscalYear;
-  let h='<div class="head"><div><h2>Where the figures come from</h2><small>'+(fy?'Statements for FY'+fy+' · ':'')+plural(S.txRaw.length,'payment')+'</small></div></div>';
+  const yrs=Array.from(new Set(S.txRaw.filter(t=>t.date).map(t=>t.date.slice(0,4)))).sort();
+  let h='<div class="head"><div><h2>Where the figures come from</h2><small>'+(yrs.length?yrs[0]+(yrs.length>1?'–'+yrs[yrs.length-1]:'')+' · ':'')+plural(S.txRaw.length,'payment')+'</small></div></div>';
   if(!ks.length)return h+'<div class="empty">Nothing loaded yet. Import a statement below, or run tools/import_statements.py.</div>';
   return h+'<div class="list">'+ks.map(k=>{const o=by[k];return '<div class="row"><span class="ico">'+ic('bank')+'</span><div class="t"><b>'+esc(k)+'</b><small>'+plural(o.n,'entry','entries')+' · '+shortDate(o.from)+' to '+shortDate(o.to)+'</small></div><div class="amt">'+(o.out?'−'+fmt(o.out):'')+'</div><div class="pct">'+(o.inn?'+'+fmt(o.inn):'')+'</div></div>'}).join('')+'</div>';
 }
@@ -393,6 +395,7 @@ function syncCard(){
   return '<div class="head"><div><h2>Statement sync</h2><small>Reads the PDF statements in a folder and adds any payments that are missing</small></div><div class="toolbar"><button class="link" data-act="sl-open">View log</button><button class="btn primary sm" data-act="sync"'+(st.running?' disabled':'')+'>'+(st.running?'Syncing…':'Sync now')+'</button></div></div>'+
    (warn.length?'<div class="hint">'+ic('info','accent')+'<span>'+warn.join(' ')+'</span></div>':'')+
    '<div class="fld"><label for="sy-link">Google Drive folder link</label><input id="sy-link" type="url" placeholder="https://drive.google.com/drive/folders/…" value="'+esc(y.driveLink||'')+'"></div>'+
+   '<div class="two"><div class="fld"><label for="sy-from">Keep payments from year</label><input id="sy-from" type="number" min="1990" max="2100" placeholder="earliest" value="'+esc(y.fromYear||'')+'"></div><div class="fld"><label for="sy-to">to year</label><input id="sy-to" type="number" min="1990" max="2100" placeholder="latest" value="'+esc(y.toYear||'')+'"></div></div>'+
    '<div class="two"><div class="fld"><label for="sy-remote">rclone remote name</label><input id="sy-remote" placeholder="gdrive" value="'+esc(y.rcloneRemote||'')+'"></div><div class="fld"><label for="sy-every">Check every (minutes)</label><input id="sy-every" type="number" min="5" step="5" value="'+esc(y.everyMinutes||60)+'"></div></div>'+
    '<div class="fld"><label for="sy-local">Or a folder on this computer</label><input id="sy-local" placeholder="/Users/you/Statements" value="'+esc(y.localFolder||'')+'"></div>'+
    '<label class="check"><input type="checkbox" id="sy-auto"'+(y.auto===false?'':' checked')+'>Check automatically while this computer is awake</label>'+
@@ -591,7 +594,7 @@ const ACT={
   async 'sl-savelink'(){const v=($('sl-link').value||'').trim();if(v&&!/\/folders\/[\w-]+|[?&]id=[\w-]+/.test(v))return toast('That does not look like a Google Drive folder link.');
     const y=Object.assign({},S.settings&&S.settings.sync,{driveLink:v});await save(patchSettings({sync:y}),v?'Folder link saved':'Folder link cleared')},
   'save-sync'(){const v=id=>($(id)&&$(id).value||'').trim(),every=Math.max(5,parseInt(v('sy-every'),10)||60);
-    save(patchSettings({sync:{driveLink:v('sy-link'),rcloneRemote:v('sy-remote'),localFolder:v('sy-local'),everyMinutes:every,auto:$('sy-auto').checked}}),'Sync settings saved')},
+    save(patchSettings({sync:{driveLink:v('sy-link'),rcloneRemote:v('sy-remote'),localFolder:v('sy-local'),everyMinutes:every,auto:$('sy-auto').checked,fromYear:v('sy-from'),toYear:v('sy-to')}}),'Sync settings saved')},
   csel(id){S.cardIdx=+id;S.flip=false;cardsRefresh()},
   cflip(){S.flip=!S.flip;cardsRefresh()},
   cnext(id){const n=cardList(monthData(curMo())).length||1;S.cardIdx=(((S.cardIdx+ +id)%n)+n)%n;S.flip=false;cardsRefresh()},

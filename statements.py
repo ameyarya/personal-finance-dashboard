@@ -80,8 +80,8 @@ BOFA_ROW = re.compile(r"(\d\d)/(\d\d)/(\d\d) (.+?) (-?%s)(?= \d\d/\d\d/\d\d |$| 
 
 
 def parse_bofa(text):
-    if "Bank of America" not in text or "Account number" not in text and "Account #" not in text:
-        return None
+    if "Bank of America" not in text or "Beginning balance on" not in text or "Ending balance on" not in text:
+        return None                    # card statements mention Bank of America too, as the place payments come from
     start = min([i for i in (text.find("Deposits and other additions Date"), text.find("Withdrawals and other subtractions Date")) if i >= 0] or [-1])
     if start < 0:
         return []
@@ -151,11 +151,63 @@ def parse_generic_card(text, hint=""):
         else:
             continue
         value = money(amt.replace(" ", ""))
+        if value == 0:
+            continue
         out.append(row(date, desc, -value, name))
     return out or None
 
 
-PARSERS = (parse_wells_fargo, parse_bofa, parse_wealthfront, parse_capital_one_year_end)
+# ---------------------------------------------------------------- American Express
+
+AMEX_ROW = re.compile(r"(?<![\d/])(\d\d)/(\d\d)/(\d\d)(?!\d)\*? ((?:(?!\d\d/\d\d/\d\d).)+?) (-?\$[\d,]+\.\d\d)(?=\s|$)")
+
+
+def parse_amex(text):
+    if "american express" not in text[:6000].lower():
+        return None
+    out = []
+    for r in AMEX_ROW.finditer(text):
+        desc = r.group(4)
+        if len(desc) < 4 or desc[0] in ",(" or re.search(r"late fee|%|variable|may have|minimum|payment due|balance|limit|account ending|card ending|customer care|closing date|posting date|indicates", desc, re.I) or not re.search(r"[A-Za-z]{3}", desc):
+            continue
+        value = money(r.group(5))
+        if value == 0:
+            continue
+        out.append(row(iso(2000 + int(r.group(3)), int(r.group(1)), int(r.group(2))), desc, -value, "Amex"))
+    return out
+
+
+# ---------------------------------------------------------------- Capital One monthly statements
+
+MON = "Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec"
+MONTHS = {m: i + 1 for i, m in enumerate(MON.split("|"))}
+C1_ROW = re.compile(r"(%s) (\d{1,2}) (?:%s) \d{1,2} ([^$]+?) (-?\$[\d,]+\.\d\d)(?=\s|$)" % (MON, MON))
+
+
+def parse_capital_one_monthly(text):
+    if "capital one" not in text.lower() or "Post Date Description Amount" not in text:
+        return None
+    m = re.search(r"as of (%s)\w* (\d{1,2}), (\d{4})" % MON, text)
+    if not m:
+        return None
+    end = dt.date(int(m.group(3)), MONTHS[m.group(1)], int(m.group(2)))
+    credits_at = text.find("Payments, Credits and Adjustments Trans Date")
+    charges_at = text.find("Transactions Trans Date")
+    stop = text.find("Fees Trans Date")
+    if charges_at < 0:
+        return []
+    out = []
+    for name, lo, hi, sign in (("credit", credits_at, charges_at, 1), ("charge", charges_at, stop if stop > charges_at else len(text), -1)):
+        if lo < 0:
+            continue
+        seg = re.sub(r"[A-Z][A-Z ]+ #\d{4}: (?:Payments, Credits and Adjustments|Transactions|Total Transactions)( Trans Date Post Date Description Amount)?", " ", text[lo:hi])
+        for r in C1_ROW.finditer(seg):
+            month, day = MONTHS[r.group(1)], int(r.group(2))
+            out.append(row(with_year(month, day, end), r.group(3), sign * abs(money(r.group(4))), "Capital One"))
+    return out
+
+
+PARSERS = (parse_wells_fargo, parse_bofa, parse_wealthfront, parse_capital_one_year_end, parse_capital_one_monthly, parse_amex)
 
 
 def parse_text(text, hint=""):

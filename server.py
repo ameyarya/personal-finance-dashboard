@@ -310,7 +310,6 @@ def sync_settings():
     with lock:
         main = STORE["collections"]["settings"].get("main", {})
     cfg = dict(main.get("sync") or {})
-    cfg["fiscalYear"] = main.get("fiscalYear")
     return cfg
 
 
@@ -385,25 +384,71 @@ def norm_key(date, amount, card):
     return (date, round(abs(float(amount)), 2), card)
 
 
-def add_statement_rows(parsed, fiscal):
-    """Store rows from PDFs that the dashboard does not have yet. Returns (added, outside_year, duplicates)."""
+def year_window(cfg):
+    """The years to keep, from the sync settings. A blank end means no limit."""
+    def num(x):
+        try:
+            return int(str(x).strip())
+        except ValueError:
+            return None
+    return num(cfg.get("fromYear")), num(cfg.get("toYear"))
+
+
+def merge_files(per_file):
+    """One list of rows from several PDFs. A payment that shows up in two files (a monthly statement and a year-end summary)
+    counts once: for each date, amount and card, keep the most copies any single file has."""
+    best = {}
+    for rows in per_file:
+        mine = {}
+        for r in rows:
+            mine.setdefault(norm_key(r["date"], r["amount"], r["card"]), []).append(r)
+        for k, group in mine.items():
+            if len(group) > len(best.get(k, [])):
+                best[k] = group
+    return [r for group in best.values() for r in group]
+
+
+DATE_SLACK_DAYS = 4      # the same payment is dated a day or two apart by the card (purchase date) and by the bank feed (posting date)
+
+
+def take_match(have, card, amount, date):
+    """If an unmatched existing payment has this card and amount on this date (or within a few days), use it up and say True."""
+    dates = have.get((card, round(abs(float(amount)), 2)), [])
+    if date in dates:
+        dates.remove(date)
+        return True
+    day = dt.date.fromisoformat(date)
+    best = None
+    for d in dates:
+        gap = abs((dt.date.fromisoformat(d) - day).days) if re.match(r"^\d{4}-\d\d-\d\d$", d) else 999
+        if gap <= DATE_SLACK_DAYS and (best is None or gap < best[0]):
+            best = (gap, d)
+    if best:
+        dates.remove(best[1])
+        return True
+    return False
+
+
+def add_statement_rows(parsed, window):
+    """Store rows from PDFs that the dashboard does not have yet. Returns (added, outside_years, duplicates)."""
+    lo, hi = window
+    parsed = merge_files(parsed)
     with lock:
         docs = STORE["collections"]["transactions"]
         have = {}
         for t in docs.values():
-            k = norm_key(t.get("date", ""), t.get("amount", 0), t.get("card", ""))
-            have[k] = have.get(k, 0) + 1
+            have.setdefault((t.get("card", ""), round(abs(float(t.get("amount", 0))), 2)), []).append(t.get("date", ""))
         added = skipped = dupes = 0
         seen = {}
-        for r in parsed:
-            if fiscal and not r["date"].startswith(str(fiscal)):
+        for r in sorted(parsed, key=lambda r: r["date"]):
+            year = int(r["date"][:4])
+            if (lo and year < lo) or (hi and year > hi):
                 skipped += 1
                 continue
-            k = norm_key(r["date"], r["amount"], r["card"])
-            if have.get(k, 0) > 0:
-                have[k] -= 1
+            if take_match(have, r["card"], r["amount"], r["date"]):
                 dupes += 1
                 continue
+            k = norm_key(r["date"], r["amount"], r["card"])
             seen[k] = seen.get(k, 0) + 1
             doc = {"date": r["date"], "desc": r["desc"], "amount": r["amount"], "card": r["card"], "who": "", "source": "pdf"}
             if r.get("cash"):
@@ -417,6 +462,20 @@ def add_statement_rows(parsed, fiscal):
             docs["pdf-" + hashlib.sha1(("%s|%s|%s|%s|%d" % (r["date"], r["desc"], r["amount"], r["card"], seen[k])).encode()).hexdigest()[:16]] = doc
             added += 1
         return added, skipped, dupes
+
+
+def drop_pdf_duplicates():
+    """Remove payments an earlier PDF pass added that another source already had (the same payment, dated a day or two apart)."""
+    with lock:
+        docs = STORE["collections"]["transactions"]
+        have = {}
+        for t in docs.values():
+            if t.get("source") != "pdf":
+                have.setdefault((t.get("card", ""), round(abs(float(t.get("amount", 0))), 2)), []).append(t.get("date", ""))
+        gone = [k for k, t in sorted(docs.items(), key=lambda kv: kv[1].get("date", "")) if t.get("source") == "pdf" and take_match(have, t.get("card", ""), t.get("amount", 0), t.get("date", ""))]
+        for k in gone:
+            del docs[k]
+        return len(gone)
 
 
 def run_sync(force=False):
@@ -447,18 +506,20 @@ def run_sync(force=False):
             raise SyncError("Add a Google Drive folder link or a local folder first.")
         if not pypdf_available():
             raise SyncError("Reading PDFs needs pypdf. Install it with: pip install pypdf")
+        window = year_window(cfg)
+        slog("Keeping payments from %s to %s" % (window[0] or "the earliest year", window[1] or "the latest year"))
         files = [f for folder in folders for f in sorted(folder.rglob("*.pdf"))]
         with lock:
             seen_files = STORE["sync"].setdefault("files", {})
             SYNC.update(phase="Reading statements", done=0, total=len(files))
         slog("Found %d statement PDF%s" % (len(files), "" if len(files) == 1 else "s"))
-        parsed, pending = [], {}
+        parsed, pending = [], {}      # parsed: one list of rows per PDF
         for i, f in enumerate(files, 1):
             if SYNC["cancel"].is_set():
                 raise Stopped()
             SYNC["done"] = i - 1
             time.sleep(float(os.environ.get("FINANCES_SYNC_DELAY", "0")))   # lets tests watch a slow sync
-            sig = "%d-%d" % (f.stat().st_size, int(f.stat().st_mtime))
+            sig = "%d-%d|%s-%s" % (f.stat().st_size, int(f.stat().st_mtime), window[0], window[1])      # a new year range means read it again
             name = "%s/%s" % (f.parent.name, f.name)
             if seen_files.get(str(f)) == sig and not force:
                 slog("[%d/%d] %s: unchanged, skipped" % (i, len(files), name))
@@ -474,19 +535,22 @@ def run_sync(force=False):
                 status["unreadable"].append("%s (layout not recognised)" % f.name)
                 slog("    layout not recognised, left alone", "warn")
             else:
-                parsed.extend(rows)
+                parsed.append(rows)
                 slog("    %d payment%s found" % (len(rows), "" if len(rows) == 1 else "s"))
             pending[str(f)] = sig
         SYNC.update(done=len(files), phase="Adding payments")
         if SYNC["cancel"].is_set():
             raise Stopped()
-        added, skipped, dupes = add_statement_rows(parsed, cfg.get("fiscalYear"))
+        removed = drop_pdf_duplicates()
+        if removed:
+            slog("Removed %d payment%s an earlier pass had added twice" % (removed, "" if removed == 1 else "s"), "warn")
+        added, skipped, dupes = add_statement_rows(parsed, window)
         with lock:
             seen_files.update(pending)
-        slog("%d new, %d already in the dashboard%s" % (added, dupes, (", %d outside FY%s ignored" % (skipped, cfg["fiscalYear"])) if skipped else ""), "ok")
+        slog("%d new, %d already in the dashboard%s" % (added, dupes, (", %d outside the years you chose ignored" % skipped) if skipped else ""), "ok")
         status.update(added=added, pdfs=len(files))
         status["message"] = "%d new payment%s from %d statement%s%s." % (added, "" if added == 1 else "s", len(files), "" if len(files) == 1 else "s",
-                                                                          ("; %d outside FY%s skipped" % (skipped, cfg["fiscalYear"])) if skipped else "")
+                                                                          ("; %d outside the years you chose skipped" % skipped) if skipped else "")
     except Stopped:
         status.update(ok=False, message="Stopped. Nothing was added.")
         slog("Stopped by you. Nothing was added; statements already read will be read again next time.", "warn")

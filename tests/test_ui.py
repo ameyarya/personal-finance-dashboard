@@ -653,7 +653,7 @@ def test_SYNC02_manual_sync_reads_a_pdf_and_adds_only_new_payments(browser, blan
     folder = tmp_path / "statements"
     folder.mkdir()
     make_pdf(browser, folder / "bofa.pdf",
-             "Bank of America Your Adv Plus Banking for November 13, 2025 to December 15, 2025 Account number: 1<br>"
+             "Bank of America Your Adv Plus Banking for November 13, 2025 to December 15, 2025 Account number: 1<br>Beginning balance on November 13, 2025 $0.00 Ending balance on December 15, 2025 $0.00<br>"
              "Deposits and other additions Date Description Amount<br>11/24/25 Payroll from ACME CO 2,500.00<br>Total deposits and other additions $2,500.00<br>"
              "Withdrawals and other subtractions Date Description Amount<br>12/02/25 Zelle payment to A FRIEND -40.00<br>Total withdrawals and other subtractions -$40.00")
     empty_server.call("PUT", "/api/doc/settings/main", {"household": "H", "currency": "USD", "opening": 0, "members": ["A"], "fiscalYear": 2025,
@@ -752,7 +752,7 @@ def folder_with_pdfs(browser, tmp_path, n):
     folder = tmp_path / "pdfs"
     folder.mkdir()
     for i in range(n):
-        make_pdf(browser, folder / ("s%d.pdf" % i), "Bank of America Account number: 1<br>Deposits and other additions Date Description Amount<br>"
+        make_pdf(browser, folder / ("s%d.pdf" % i), "Bank of America Account number: 1<br>Beginning balance on January 1, 2025 $0.00 Ending balance on March 1, 2025 $0.00<br>Deposits and other additions Date Description Amount<br>"
                  "0%d/05/25 Payroll ACME %d 100.00<br>Total deposits and other additions $100.00" % (i + 1, i))
     return folder
 
@@ -1126,3 +1126,59 @@ def test_SYNCWIN05_the_moving_progress_bar_stays_inside_the_window(browser, serv
     assert p.evaluate("""() => { const b = document.getElementById('sl-bar').getBoundingClientRect(), w = document.querySelector('.sl-box').getBoundingClientRect();
                           return b.left >= w.left - 1 && b.right <= w.right + 1 }""")
     p.context.close()
+
+
+# ---------------------------------------------------------------- more than one year of statements
+
+def pdf_statement(browser, path, year, amount):
+    make_pdf(browser, path, "Bank of America Account number: 1<br>Beginning balance on January 1, 2024 $0.00 Ending balance on December 31, 2025 $0.00<br>Deposits and other additions Date Description Amount<br>"
+             "03/05/%s Payroll ACME %s %s.00<br>Total deposits and other additions $%s.00" % (str(year)[2:], year, amount, amount))
+
+
+def test_YEARS01_statements_from_other_years_are_kept_unless_you_limit_them(browser, blank, empty_server, tmp_path):
+    pytest.importorskip("pypdf")
+    folder = tmp_path / "s"
+    (folder / "a").mkdir(parents=True)
+    pdf_statement(browser, folder / "a" / "y24.pdf", 2024, 100)
+    pdf_statement(browser, folder / "a" / "y25.pdf", 2025, 200)
+    base = {"household": "H", "currency": "USD", "opening": 0, "members": ["A"], "fiscalYear": 2025}
+    empty_server.call("PUT", "/api/doc/settings/main", dict(base, sync={"localFolder": str(folder), "auto": False, "fromYear": "2025"}))
+    blank.reload()
+    go(blank, "accounts")
+    blank.click('#c-sync [data-act="sync"]')
+    expect(blank.locator("#sl-log")).to_contain_text("1 new", timeout=20000)
+    expect(blank.locator("#sl-log")).to_contain_text("1 outside the years you chose ignored")
+    years = sorted(t["date"][:4] for t in empty_server.docs("transactions").values())
+    assert years == ["2025"]
+    blank.click('#synclog [data-act="sl-close"]')
+    blank.fill("#sy-from", "")                                        # drop the limit: the 2024 statement is read again
+    blank.click('[data-act="save-sync"]')
+    expect(blank.locator("#toast")).to_contain_text("Sync settings saved")
+    blank.click('#c-sync [data-act="sync"]')
+    expect(blank.locator("#sl-log")).to_contain_text("from the earliest year", timeout=20000)      # this run's own first line, not the last run's
+    expect(blank.locator("#sl-log")).to_contain_text("Finished", timeout=20000)
+    years = sorted(t["date"][:4] for t in empty_server.docs("transactions").values())
+    assert years == ["2024", "2025"]
+
+
+def test_YEARS02_the_date_arrows_reach_every_year_that_has_statements(blank, empty_server):
+    empty_server.call("PUT", "/api/doc/settings/main", {"household": "H", "currency": "USD", "opening": 0, "members": ["A"], "fiscalYear": 2025})
+    for i, d in enumerate(["2024-03-04", "2025-06-10"]):
+        empty_server.call("PUT", "/api/doc/transactions/y%d" % i, {"date": d, "desc": "Thing", "amount": -5, "category": "Dining", "who": "", "source": "pdf"})
+    blank.reload()
+    expect(blank.locator("#mlabel")).to_have_text("June 2025")
+    for _ in range(15):
+        if blank.locator("#prev").is_enabled():
+            blank.click("#prev")
+    expect(blank.locator("#mlabel")).to_have_text("March 2024")
+    expect(blank.locator("#prev")).to_be_disabled()
+
+
+def test_YEARS03_the_balance_starts_at_the_opening_date_not_earlier(blank, empty_server):
+    empty_server.call("PUT", "/api/doc/settings/main", {"household": "H", "currency": "USD", "opening": 1000, "members": ["A"], "fiscalYear": 2025})
+    rows = [("2024-12-20", 500, "Income", True), ("2025-01-05", -100, "Dining", True), ("2025-01-06", 40, "Income", True)]
+    for i, (d, a, c, cash) in enumerate(rows):
+        empty_server.call("PUT", "/api/doc/transactions/c%d" % i, {"date": d, "desc": "R%d" % i, "amount": a, "category": c, "who": "", "cash": cash, "source": "pdf"})
+    blank.reload()
+    blank.click('#period [data-id="year"]')
+    expect(blank.locator("#balance")).to_have_text("$940")           # 1000 - 100 + 40; the December 2024 deposit predates the opening balance
