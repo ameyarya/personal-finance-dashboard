@@ -3,29 +3,29 @@ img{max-width:100%}
 /* Layout: one smoked-glass window. Sidebar of pages on the left (a bottom bar on phones), greeting and month on top, cards on a 12-column grid. */
 :root{
   color-scheme:dark;
-  --bg:#0a1210; --blob1:#1b5140; --blob2:#3d3016;
+  --bg:#0a0e16; --blob1:#1d3a66; --blob2:#3b2a5c;
   --frame:rgba(255,255,255,.035); --glass:rgba(255,255,255,.05); --glass2:rgba(255,255,255,.1); --line:rgba(255,255,255,.11);
-  --fg:#e8f0eb; --muted:#93a59c; --accent:#7ddfb1; --accent-ink:#052417;
+  --fg:#eaf0fa; --muted:#98a4b8; --accent:#a8c8ff; --accent-ink:#0a1426;
   --out:#efc46a; --bad:#ff8f80; --track:rgba(255,255,255,.08);
-  --c0:#8f9c95; --c1:#a9c98a; --c2:#7ddfb1; --c3:#efc46a; --c4:#8fb8ee; --c5:#e9a377; --c6:#e58fa0;
+  --c0:#8f98a8; --c1:#b9a9ff; --c2:#8fd6ff; --c3:#efc46a; --c4:#8fb8ee; --c5:#e9a377; --c6:#e58fa0;
   --display:"Sora","Inter",system-ui,sans-serif; --body:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
   --r:20px;
 }
 @media (prefers-color-scheme: light){ :root:not([data-theme="dark"]){
   color-scheme:light;
-  --bg:#e4ece6; --blob1:#bfe3d0; --blob2:#f1e0bd;
-  --frame:rgba(255,255,255,.38); --glass:rgba(255,255,255,.6); --glass2:rgba(255,255,255,.9); --line:rgba(18,48,34,.13);
-  --fg:#13201a; --muted:#56675f; --accent:#1c8a5b; --accent-ink:#ffffff;
-  --out:#a9770c; --bad:#bf3f2d; --track:rgba(18,48,34,.1);
-  --c0:#6d7a73; --c1:#5f8a35; --c2:#1c8a5b; --c3:#a9770c; --c4:#2f6fb5; --c5:#b55e22; --c6:#b0405a;
+  --bg:#e7ecf4; --blob1:#c3d8f5; --blob2:#e3d6f4;
+  --frame:rgba(255,255,255,.38); --glass:rgba(255,255,255,.6); --glass2:rgba(255,255,255,.9); --line:rgba(20,32,56,.13);
+  --fg:#131b28; --muted:#586478; --accent:#2f6fd0; --accent-ink:#ffffff;
+  --out:#a9770c; --bad:#bf3f2d; --track:rgba(20,32,56,.1);
+  --c0:#6d7788; --c1:#6a55c8; --c2:#2a83c0; --c3:#a9770c; --c4:#2f6fb5; --c5:#b55e22; --c6:#b0405a;
 }}
 :root[data-theme="light"]{
   color-scheme:light;
-  --bg:#e4ece6; --blob1:#bfe3d0; --blob2:#f1e0bd;
-  --frame:rgba(255,255,255,.38); --glass:rgba(255,255,255,.6); --glass2:rgba(255,255,255,.9); --line:rgba(18,48,34,.13);
-  --fg:#13201a; --muted:#56675f; --accent:#1c8a5b; --accent-ink:#ffffff;
-  --out:#a9770c; --bad:#bf3f2d; --track:rgba(18,48,34,.1);
-  --c0:#6d7a73; --c1:#5f8a35; --c2:#1c8a5b; --c3:#a9770c; --c4:#2f6fb5; --c5:#b55e22; --c6:#b0405a;
+  --bg:#e7ecf4; --blob1:#c3d8f5; --blob2:#e3d6f4;
+  --frame:rgba(255,255,255,.38); --glass:rgba(255,255,255,.6); --glass2:rgba(255,255,255,.9); --line:rgba(20,32,56,.13);
+  --fg:#131b28; --muted:#586478; --accent:#2f6fd0; --accent-ink:#ffffff;
+  --out:#a9770c; --bad:#bf3f2d; --track:rgba(20,32,56,.1);
+  --c0:#6d7788; --c1:#6a55c8; --c2:#2a83c0; --c3:#a9770c; --c4:#2f6fb5; --c5:#b55e22; --c6:#b0405a;
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 var(--body);font-variant-numeric:tabular-nums;
