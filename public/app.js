@@ -15,6 +15,7 @@ const ICONS={grid:'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',swap:'M7 
  dots:'M6 12h.01M12 12h.01M18 12h.01',down:'M12 4v14M6 12l6 6 6-6',spark:'M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M18 6l-2.5 2.5M8.5 15.5L6 18',info:'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 11v5M12 8h.01',
  chart:'M5 20V10M12 20V4M19 20v-7',bank:'M4 10h16M6 10v8M10 10v8M14 10v8M18 10v8M3 20h18M12 3l9 5H3z',
  sun:'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19',moon:'M20 14A8 8 0 1 1 10 4a6.5 6.5 0 0 0 10 10z',auto:'M12 3a9 9 0 1 0 0 18zM12 3a9 9 0 0 1 0 18',
+ search:'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4-4',plus:'M12 5v14M5 12h14',send:'M21 3L3 11l7 3 3 7zM10 14l11-11',bell:'M6 16v-5a6 6 0 0 1 12 0v5l2 2H4zM10 21h4',
  upload:'M12 16V4M7 9l5-5 5 5M5 20h14',download:'M12 4v12M7 11l5 5 5-5M5 20h14'};
 const ic=(n,col)=>'<svg class="ic" viewBox="0 0 24 24"'+(col?' style="color:var(--'+col+')"':'')+' aria-hidden="true"><path d="'+(ICONS[n]||ICONS.dots)+'"/></svg>';
 const catIco=(c,col)=>{const m=CATMETA[c]||CATMETA.Other;return '<span class="ico">'+ic(m[0],col||m[1])+'</span>'};
@@ -103,7 +104,10 @@ function render(){
   else if(S.ready){const pay=m.items.find(i=>!i.paid&&i.amount>0&&i.due>=m.last),nb=m.items.filter(i=>!i.paid&&i.amount<0&&(!pay||i.due<=pay.due)).length;
     lede=(pay?pay.name+' lands '+(pay.due===m.last?'today':'in '+plural(pay.due-m.last,'day'))+'. ':'')+(nb?plural(nb,'bill')+(nb===1?' goes':' go')+' out '+(pay?'before then.':'before the month ends.'):pay?'No bills are due before then.':'Nothing is due for the rest of the month.')}
   $('lede').textContent=lede;
-  $('next').disabled=S.month>=YM; $('btn-settings').innerHTML=ic('sliders');
+  $('next').disabled=S.month>=YM;
+  $('ic-search').innerHTML=ic('search');$('btn-add').innerHTML=ic('plus');$('btn-send').innerHTML=ic('send');$('btn-bell').innerHTML=ic('bell');
+  $('btn-settings').textContent=(c.household||'H').split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase();
+  $('btn-bell').classList.toggle('has',S.ready&&notices(m).length>0);
   const th=themeNow();$('btn-theme').innerHTML=ic(th==='light'?'sun':th==='dark'?'moon':'auto');$('btn-theme').title='Theme: '+(th==='auto'?'match this device':th);
   const nv=$('nav');
   if(!nv.querySelector('button'))nv.innerHTML='<i class="navpill" aria-hidden="true"></i>'+VIEWS.map(v=>'<button data-act="view" data-id="'+v[0]+'">'+ic(v[2])+'<span>'+v[1]+'</span></button>').join('');
@@ -320,6 +324,43 @@ function dataCard(){
    '<div class="sub">'+plural(S.txRaw.length,'payment')+' · '+plural(S.rules.length,'category rule')+' remembered'+(S.rules.length?' <button class="link" data-act="rules">Review</button>':'')+'</div>';
 }
 
+/* ---------- search palette and popovers ---------- */
+let palSel=0,palItems=[];
+function palList(q){q=q.trim().toLowerCase();const out=[];
+  VIEWS.forEach(v=>out.push({g:'Pages',t:v[1],i:v[2],run:()=>ACT.view(v[0])}));
+  [['Add payment','add-tx','plus'],['Add a bill or payday','add-rec','cal'],['New savings pot','add-pot','jar'],['Move money to a pot','send','send'],['Settings','settings','sliders'],['Switch theme','theme','sun'],['Import a statement (CSV)','import-csv','upload']].forEach(a=>out.push({g:'Actions',t:a[0],i:a[2],run:()=>ACT[a[1]]()}));
+  if(q){
+    S.txRaw.filter(t=>((t.desc||'')+' '+(t.category||'')+' '+(t.who||'')).toLowerCase().includes(q)).sort((a,b)=>a.date<b.date?1:-1).slice(0,8)
+      .forEach(t=>out.push({g:'Payments',t:t.desc||'Payment',s:shortDate(t.date)+' · '+(t.amount>0?'+':'−')+fmt(Math.abs(t.amount)),i:(CATMETA[t.category]||CATMETA.Other)[0],run:()=>{S.q=t.desc||'';S.fcat='';S.month=t.date.slice(0,7);ACT.view('payments')}}));
+    S.rec.forEach(r=>out.push({g:'Bills',t:r.name,s:'Day '+r.day+' · '+fmt(Math.abs(r.amount)),i:'cal',run:()=>ACT.view('bills')}));
+    S.pots.forEach(p=>out.push({g:'Pots',t:p.name,s:fmt(+p.saved||0)+' of '+fmt(+p.target||0),i:'jar',run:()=>ACT.view('pots')}));
+    return out.filter(x=>x.g==='Payments'||(x.t+' '+(x.s||'')).toLowerCase().includes(q)).slice(0,14)}
+  return out}
+function palDraw(){const q=$('pal-q').value;palItems=palList(q);palSel=Math.min(palSel,Math.max(palItems.length-1,0));let g='',h='';
+  palItems.forEach((x,k)=>{if(x.g!==g){g=x.g;h+='<div class="pal-g">'+g+'</div>'}
+    h+='<button type="button" class="pal-i'+(k===palSel?' on':'')+'" data-k="'+k+'"><span class="ico">'+ic(x.i)+'</span><span class="t"><b>'+esc(x.t)+'</b>'+(x.s?'<small>'+esc(x.s)+'</small>':'')+'</span><kbd>↵</kbd></button>'});
+  $('pal-list').innerHTML=h||'<div class="empty">Nothing matches “'+esc(q)+'”.</div>';
+  const on=$('pal-list').querySelector('.on');if(on)on.scrollIntoView({block:'nearest'})}
+function palRun(k){const x=palItems[k];if(!x)return;$('pal').close();setTimeout(x.run,60)}
+function openPalette(){const d=$('pal');if(d.open)return;palSel=0;
+  d.innerHTML='<div class="pal-in">'+ic('search')+'<input id="pal-q" type="text" placeholder="Search payments, people, pages" autocomplete="off" aria-label="Search"><kbd>esc</kbd></div><div id="pal-list" class="pal-list"></div>';
+  d.showModal();palDraw();$('pal-q').focus();
+  $('pal-q').oninput=()=>{palSel=0;palDraw()};
+  $('pal-q').onkeydown=e=>{if(e.key==='ArrowDown'){e.preventDefault();palSel=Math.min(palSel+1,palItems.length-1);palDraw()}else if(e.key==='ArrowUp'){e.preventDefault();palSel=Math.max(palSel-1,0);palDraw()}else if(e.key==='Enter'){e.preventDefault();palRun(palSel)}};
+  $('pal-list').onclick=e=>{const b=e.target.closest('.pal-i');if(b)palRun(+b.dataset.k)};
+  $('pal-list').onmousemove=e=>{const b=e.target.closest('.pal-i');if(b&&+b.dataset.k!==palSel){palSel=+b.dataset.k;$('pal-list').querySelectorAll('.pal-i').forEach(n=>n.classList.toggle('on',+n.dataset.k===palSel))}}}
+document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openPalette()}
+  else if(e.key==='/'&&!/INPUT|TEXTAREA|SELECT/.test((e.target.tagName||''))&&!document.querySelector('dialog[open]')){e.preventDefault();openPalette()}
+  else if(e.key==='Escape'&&!$('pop').hidden)closePop()});
+if(!/Mac|iPhone|iPad/.test(navigator.platform||navigator.userAgent))$('kbd').textContent='Ctrl K';
+let popKind='';
+function closePop(){popKind='';const p=$('pop');if(p.hidden)return;p.classList.remove('in');p.hidden=true;$('btn-bell').setAttribute('aria-expanded','false');$('btn-send').setAttribute('aria-expanded','false')}
+function togglePop(kind){if(popKind===kind)return closePop();const p=$('pop'),m=monthData(S.month);popKind=kind;let h='';
+  if(kind==='bell'){const n=notices(m);h='<div class="pop-h">'+ic('spark','accent')+'<b>Noticed</b><small>'+n.length+'</small></div>'+(n.length?n.map(x=>'<button class="pop-i" data-act="view" data-id="'+x.v+'"><span class="ico">'+ic(x.i,'accent')+'</span><span class="t"><b>'+x.t+'</b><small>'+x.b+'</small></span></button>').join(''):'<div class="empty">Nothing stands out this month.</div>')}
+  else{h='<div class="pop-h">'+ic('send','accent')+'<b>Move money to a pot</b></div>'+(S.pots.length?S.pots.map(x=>'<button class="pop-i" data-act="pot" data-id="'+esc(x.id)+'"><span class="ico">'+ic('jar')+'</span><span class="t"><b>'+esc(x.name)+'</b><small>'+fmt(+x.saved||0)+' of '+fmt(+x.target||0)+'</small></span></button>').join(''):'<div class="empty">No pots yet.</div>')+'<button class="pop-i" data-act="add-pot"><span class="ico">'+ic('plus')+'</span><span class="t"><b>New pot</b></span></button>'}
+  p.innerHTML=h;p.hidden=false;restart(p,'in');$(kind==='bell'?'btn-bell':'btn-send').setAttribute('aria-expanded','true')}
+document.addEventListener('click',e=>{if(popKind&&!e.target.closest('#pop,#btn-bell,#btn-send'))closePop();else if(popKind&&e.target.closest('#pop [data-act]'))closePop()},true);
+
 /* ---------- toast, forms, dialogs ---------- */
 let toastT=0;
 function toast(msg,undo){const t=$('toast');t.hidden=false;t.innerHTML='<span>'+esc(msg)+'</span>'+(undo?'<button id="toast-undo">Undo</button>':'');
@@ -368,6 +409,7 @@ async function csvPreview(flip){
 
 const col=n=>S.db.collection(n);
 const ACT={
+  palette(){openPalette()}, bell(){togglePop('bell')}, send(){togglePop('send')},
   prev(){S.month=shift(S.month,-1);S.noteIdx=0;S.anim='page';render()},
   next(){if(S.month<YM){S.month=shift(S.month,1);S.noteIdx=0;S.anim='page';render()}},
   view(id){if(!VIEWS.some(v=>v[0]===id))return;if(S.view!==id)S.anim='page';S.view=id;try{history.replaceState(null,'','#'+id)}catch(e){location.hash=id}render();window.scrollTo(0,0)},

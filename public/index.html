@@ -16,13 +16,20 @@
     <div class="safe" id="safe"></div>
   </aside>
   <div class="main">
+    <div class="topbar">
+      <button class="search" id="btn-search" data-act="palette" aria-label="Search payments, people, pages (Command K)"><span id="ic-search"></span><span class="ph">Search payments, people, pages</span><kbd id="kbd">⌘K</kbd></button>
+      <button class="btn icon add" id="btn-add" data-act="add-tx" aria-label="Add payment" title="Add payment"></button>
+      <button class="btn icon" id="btn-send" data-act="send" aria-label="Move money to a pot" title="Move money to a pot"></button>
+      <i class="vsep" aria-hidden="true"></i>
+      <button class="btn icon" id="btn-theme" data-act="theme" aria-label="Switch theme"></button>
+      <button class="btn icon" id="btn-bell" data-act="bell" aria-label="Noticed" title="Noticed"></button>
+      <button class="avatar" id="btn-settings" data-act="settings" aria-label="Settings" title="Settings"></button>
+      <div id="pop" role="dialog" hidden></div>
+    </div>
     <header class="top">
       <div><div class="date" id="date"></div><h1 id="greet">Household money</h1><p id="lede"></p></div>
       <div class="tools">
         <div class="monthnav"><button class="btn icon" id="prev" data-act="prev" aria-label="Previous month">‹</button><span id="mlabel"></span><button class="btn icon" id="next" data-act="next" aria-label="Next month">›</button></div>
-        <button class="btn icon" id="btn-theme" data-act="theme" aria-label="Switch theme"></button>
-        <button class="btn icon" id="btn-settings" data-act="settings" aria-label="Settings"></button>
-        <button class="btn primary" id="btn-add" data-act="add-tx">Add payment</button>
       </div>
     </header>
     <div id="banner" hidden></div>
@@ -30,6 +37,7 @@
   </div>
 </div></div>
 <dialog id="dlg"></dialog>
+<dialog id="pal" aria-label="Search"></dialog>
 <input type="file" id="csv-file" accept=".csv,text/csv,text/plain" hidden>
 <div id="toast" role="status" hidden></div>
 <script src="app.js"></script>
