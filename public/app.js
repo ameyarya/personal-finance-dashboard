@@ -349,11 +349,11 @@ function cardStack(m){
   if(!cs.length)return '<div class="head"><div><h2>Cards</h2><small>Every card in your statements</small></div></div><div class="empty">No card payments yet. Statements you import show up here, one card each.</div>';
   const n=cs.length,sel=((S.cardIdx%n)+n)%n,c=cs[sel],sp=spendByCat(c.mo.length?c.mo:c.all),top=Object.keys(sp).sort((a,b)=>sp[b]-sp[a]).slice(0,4);
   const face=cs.map((x,i)=>{const pos=(i-sel+n)%n;
-    const tops=Object.keys(spendByCat(x.all)).sort((a,b)=>spendByCat(x.all)[b]-spendByCat(x.all)[a]).slice(0,4),sc2=spendByCat(x.all);
+    const recent=x.all.slice().sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:0).slice(0,4);
     return '<div class="vcard'+(pos===0&&S.flip?' flip':'')+'" data-act="'+(pos===0?'cflip':'csel')+'" data-id="'+i+'" tabindex="0" role="button" aria-label="'+esc(x.name)+'" style="'+vstyle(pos)+';--a:'+x.face[0]+';--b:'+x.face[1]+'"><div class="inner">'+
       '<div class="face front"><div class="vtop"><b>'+esc(x.name)+'<small class="own">'+esc(x.owner)+'</small></b><span class="nfc">'+ic('spark')+'</span></div><span class="chip"></span>'+
       '<div class="vbot"><div><small>Spent in '+mShort(m.mo)+'</small><b>'+fmt(x.spent)+'</b></div><div><small>This year</small><b>'+fmt(x.total,true)+'</b></div></div></div>'+
-      '<div class="face back"><b>'+esc(x.name)+' by category</b>'+tops.map(k=>'<div class="vrow"><span>'+esc(k)+'</span><span>'+fmt(sc2[k])+'</span></div>').join('')+'<small>Tap to flip back</small></div></div></div>'}).join('');
+      '<div class="face back"><b>'+esc(x.name)+' · recent</b>'+(recent.length?recent.map(t=>'<div class="vrow"><span><i>'+esc(shortDate(t.date))+'</i>'+esc(t.desc||'Payment')+'</span><span>'+(t.amount>0?'+':'−')+fmt(Math.abs(t.amount))+'</span></div>').join(''):'<div class="vrow"><span>No payments yet</span></div>')+'<small>Tap to flip back · swipe for the next card</small></div></div></div>'}).join('');
   return '<div class="head"><div><h2>Cards</h2><small>Tap the front card to flip it, tap the ones behind to bring them forward</small></div></div>'+
    '<div class="cstack" id="cstack">'+face+'</div>'+
    '<div class="cnav"><button class="btn icon" data-act="cnext" data-id="-1" aria-label="Previous card">‹</button><div class="dots">'+cs.map((_,i)=>'<i'+(i===sel?' class="on"':'')+'></i>').join('')+'</div><button class="btn icon" data-act="cnext" data-id="1" aria-label="Next card">›</button></div>';
@@ -430,6 +430,26 @@ function openSyncLog(){const o=$('synclog');SL.opener=document.activeElement;SL.
 function closeSyncLog(){SL.open=false;$('synclog').hidden=true;document.body.style.overflow='';clearInterval(SL.timer);clearInterval(SL.clock);if(SL.opener&&SL.opener.focus)try{SL.opener.focus()}catch(e){}}
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&SL.open){e.preventDefault();closeSyncLog()}});
 document.addEventListener('click',e=>{if(e.target.id==='synclog')closeSyncLog()});
+
+/* ---------- swipe the card stack: left for the next card, right for the previous, tap to flip ---------- */
+const SW={on:false,id:0,x0:0,y0:0,dx:0,t0:0,moved:false,el:null,lock:''};
+const swipeBlockedClick=()=>SW.blockUntil&&performance.now()<SW.blockUntil;
+document.addEventListener('pointerdown',e=>{const st=e.target.closest&&e.target.closest('#cstack');if(!st||e.button>0)return;const el=st.querySelector('.vcard[data-act="cflip"]');if(!el)return;
+  Object.assign(SW,{on:true,id:e.pointerId,x0:e.clientX,y0:e.clientY,dx:0,t0:performance.now(),moved:false,el,lock:''})});
+document.addEventListener('pointermove',e=>{if(!SW.on||e.pointerId!==SW.id)return;const dx=e.clientX-SW.x0,dy=e.clientY-SW.y0;
+  if(!SW.lock){if(Math.abs(dx)<6&&Math.abs(dy)<6)return;SW.lock=Math.abs(dx)>Math.abs(dy)?'x':'y'}
+  if(SW.lock==='y'){SW.on=false;return}
+  if(!SW.moved){SW.moved=true;try{SW.el.setPointerCapture(e.pointerId)}catch(x){}SW.el.style.transition='none'}
+  SW.dx=dx;SW.el.style.transform='translateX('+dx+'px) rotate('+(dx/28)+'deg)';SW.el.style.opacity=String(Math.max(.35,1-Math.abs(dx)/420));e.preventDefault()},{passive:false});
+function swipeEnd(e){if(!SW.on||e.pointerId!==SW.id)return;SW.on=false;const el=SW.el,dx=SW.dx,v=Math.abs(dx)/Math.max(1,performance.now()-SW.t0);
+  if(!SW.moved)return;SW.blockUntil=performance.now()+350;           // a drag must not also count as a tap
+  const n=cardList(monthData(curMo())).length,go=n>1&&(Math.abs(dx)>70||(Math.abs(dx)>28&&v>.45));
+  el.style.transition='transform .28s var(--ease),opacity .28s';
+  if(!go){el.style.transform='';el.style.opacity='';return}
+  const dir=dx<0?1:-1;el.style.transform='translateX('+(dx<0?-140:140)+'%) rotate('+(dx<0?-14:14)+'deg)';el.style.opacity='0';
+  setTimeout(()=>{ACT.cnext(dir)},230)}
+document.addEventListener('pointerup',swipeEnd);document.addEventListener('pointercancel',swipeEnd);
+document.addEventListener('keydown',e=>{if((e.key==='ArrowLeft'||e.key==='ArrowRight')&&e.target.closest&&e.target.closest('.vcard'))ACT.cnext(e.key==='ArrowRight'?1:-1)});
 
 /* ---------- the phone's "More" tab ---------- */
 function closeMore(){const s=document.getElementById('more-sheet'),b=document.querySelector('.more-btn');if(s)s.hidden=true;if(b)b.setAttribute('aria-expanded','false')}
@@ -623,7 +643,7 @@ const ACT={
     $('dlg-cancel').onclick=()=>d.close();if(!d.open)d.showModal()},
   async 'del-rule'(id){if(await save(col('rules').doc(id).delete(),'Rule forgotten')){if(S.rules.length)ACT.rules();else $('dlg').close()}}
 };
-document.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b||b.disabled)return;const a=b.dataset.act;if(ACT[a])ACT[a](b.dataset.id)});
+document.addEventListener('click',e=>{if(swipeBlockedClick()&&e.target.closest('#cstack')){e.preventDefault();e.stopPropagation();return}const b=e.target.closest('[data-act]');if(!b||b.disabled)return;const a=b.dataset.act;if(ACT[a])ACT[a](b.dataset.id)});
 document.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target.matches&&e.target.matches('.row.click,.vcard')){e.preventDefault();const a=e.target.dataset.act;if(ACT[a])ACT[a](e.target.dataset.id)}});
 document.addEventListener('input',e=>{if(e.target.id==='lim'){$('lim-out').textContent=+e.target.value?fmt(+e.target.value):'None set'}if(e.target.id==='q'){S.q=e.target.value;refreshTx()}});
 document.addEventListener('change',e=>{const t=e.target;

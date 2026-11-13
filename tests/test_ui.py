@@ -987,3 +987,125 @@ def test_MORE03_resizing_from_phone_to_desktop_closes_the_sheet(browser, server)
     expect(p.locator("#more-sheet")).to_be_hidden()
     expect(p.locator(".more-btn")).to_be_hidden()
     p.context.close()
+
+
+# ---------------------------------------------------------------- swiping through the cards
+
+def three_cards(server):
+    for i, (card, amt, d) in enumerate([("Visa", -40, "2026-11-05"), ("Visa", -10, "2026-11-06"), ("Store card", -25, "2026-11-04"), ("Fuel card", -60, "2026-11-03"), ("Visa", -5, "2026-10-30")]):
+        server.call("PUT", "/api/doc/transactions/k%d" % i, {"date": d, "desc": "Item %d" % i, "amount": amt, "category": "Shopping", "who": "", "card": card})
+
+
+def drag(page, dx, dy=0, steps=10):
+    box = page.locator("#c-stack .vcard[data-act=cflip]").bounding_box()
+    x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+    page.mouse.move(x, y)
+    page.mouse.down()
+    page.mouse.move(x + dx, y + dy, steps=steps)
+    page.mouse.up()
+
+
+def current_card(page):
+    return page.locator("#c-cdet h2").inner_text()
+
+
+def test_SWIPE01_swipe_left_goes_to_the_next_card_and_right_to_the_previous(blank, empty_server):
+    three_cards(empty_server)
+    blank.reload()
+    go(blank, "cards")
+    first = current_card(blank)
+    drag(blank, -140)
+    blank.wait_for_function("name => document.querySelector('#c-cdet h2').innerText !== name", arg=first)
+    second = current_card(blank)
+    assert second != first
+    drag(blank, -140)
+    blank.wait_for_function("name => document.querySelector('#c-cdet h2').innerText !== name", arg=second)
+    third = current_card(blank)
+    assert len({first, second, third}) == 3
+    drag(blank, 140)                                         # swiping right goes back
+    blank.wait_for_function("name => document.querySelector('#c-cdet h2').innerText !== name", arg=third)
+    assert current_card(blank) == second
+    expect(blank.locator("#c-cpay")).to_contain_text(second)       # the recent-payments list follows the card
+    drag(blank, -140)
+    blank.wait_for_timeout(700)
+    drag(blank, -140)
+    blank.wait_for_timeout(700)
+    assert current_card(blank) == first                       # and it wraps around
+
+
+def test_SWIPE02_tapping_shows_recent_payments_and_a_drag_is_not_a_tap(blank, empty_server):
+    three_cards(empty_server)
+    blank.reload()
+    go(blank, "cards")
+    drag(blank, -140)
+    blank.wait_for_timeout(700)
+    expect(blank.locator("#c-stack .vcard.flip")).to_have_count(0)    # swiping did not flip the card
+    card = blank.locator("#c-stack .vcard[data-act=cflip]")
+    card.click()
+    expect(blank.locator("#c-stack .vcard.flip")).to_have_count(1)
+    expect(card).to_contain_text("recent")
+    expect(card).to_contain_text("Item")
+    card.click()
+    expect(blank.locator("#c-stack .vcard.flip")).to_have_count(0)
+    drag(blank, 3, steps=2)                                          # a tiny wobble still counts as a tap
+    expect(blank.locator("#c-stack .vcard.flip")).to_have_count(1)
+
+
+def test_SWIPE03_small_or_vertical_drags_snap_back_and_do_nothing(blank, empty_server):
+    three_cards(empty_server)
+    blank.reload()
+    go(blank, "cards")
+    first = current_card(blank)
+    drag(blank, -30, steps=30)
+    blank.wait_for_timeout(500)
+    assert current_card(blank) == first
+    drag(blank, 10, 160)                                             # mostly vertical: the page may scroll, the card must not move
+    blank.wait_for_timeout(500)
+    assert current_card(blank) == first
+    expect(blank.locator("#c-stack .vcard.flip")).to_have_count(0)
+    transform = blank.locator("#c-stack .vcard[data-act=cflip]").evaluate("e => e.style.transform")
+    assert "translateX" not in transform
+
+
+def test_SWIPE04_one_card_cannot_be_swiped_away(blank, empty_server):
+    empty_server.call("PUT", "/api/doc/transactions/only", {"date": "2026-11-05", "desc": "One", "amount": -5, "category": "Dining", "who": "", "card": "Solo"})
+    blank.reload()
+    go(blank, "cards")
+    drag(blank, -200)
+    blank.wait_for_timeout(600)
+    assert current_card(blank) == "Solo"
+    expect(blank.locator("#c-stack .vcard[data-act=cflip]")).to_be_visible()
+    opacity = blank.locator("#c-stack .vcard[data-act=cflip]").evaluate("e => getComputedStyle(e).opacity")
+    assert float(opacity) == 1.0
+
+
+def test_SWIPE05_arrow_keys_move_between_cards(blank, empty_server):
+    three_cards(empty_server)
+    blank.reload()
+    go(blank, "cards")
+    first = current_card(blank)
+    blank.locator("#c-stack .vcard[data-act=cflip]").focus()
+    blank.keyboard.press("ArrowRight")
+    blank.wait_for_function("name => document.querySelector('#c-cdet h2').innerText !== name", arg=first)
+    blank.locator("#c-stack .vcard[data-act=cflip]").focus()
+    blank.keyboard.press("ArrowLeft")
+    blank.wait_for_function("name => document.querySelector('#c-cdet h2').innerText === name", arg=first)
+
+
+def test_SWIPE06_a_finger_swipe_on_a_phone_works(browser, empty_server):
+    three_cards(empty_server)
+    context = browser.new_context(viewport={"width": 390, "height": 800}, has_touch=True, is_mobile=True, reduced_motion="reduce")
+    page = context.new_page()
+    page.goto(empty_server.url + "/#cards")
+    expect(page.locator("#c-stack .vcard").first).to_be_visible()
+    first = current_card(page)
+    box = page.locator("#c-stack .vcard[data-act=cflip]").bounding_box()
+    x, y = box["x"] + box["width"] * 0.8, box["y"] + box["height"] / 2
+    cdp = context.new_cdp_session(page)
+    cdp.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [{"x": x, "y": y}]})
+    for i in range(1, 9):
+        cdp.send("Input.dispatchTouchEvent", {"type": "touchMove", "touchPoints": [{"x": x - i * 18, "y": y}]})
+    cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+    page.wait_for_function("name => document.querySelector('#c-cdet h2').innerText !== name", arg=first)
+    assert page.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
+    context.close()
