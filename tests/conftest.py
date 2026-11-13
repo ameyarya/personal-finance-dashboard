@@ -70,6 +70,20 @@ class Server:
         except ValueError:
             return status, raw
 
+    def raw(self, method, path, body=None, headers=None):
+        """Like call(), but also returns the response headers: (status, parsed body, headers)."""
+        data = None if body is None else (body if isinstance(body, bytes) else json.dumps(body).encode())
+        req = urllib.request.Request(self.url + path, data=data, method=method, headers={"Content-Type": "application/json", **(headers or {})})
+        try:
+            with urllib.request.urlopen(req, timeout=10) as res:
+                status, text, head = res.status, res.read().decode(), res.headers
+        except urllib.error.HTTPError as e:
+            status, text, head = e.code, e.read().decode(), e.headers
+        try:
+            return status, json.loads(text), head
+        except ValueError:
+            return status, text, head
+
     def data(self):
         return self.call("GET", "/api/data")[1]
 

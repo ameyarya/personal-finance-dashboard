@@ -54,7 +54,13 @@ def money(text):
 
 
 def go(page, view):
-    page.click('#nav button[data-id="%s"]' % view)
+    """Open a page the way a person would: from the sidebar, or from the More sheet when the phone hides that tab."""
+    tab = page.locator('#nav button[data-id="%s"]' % view)
+    if tab.is_visible():
+        tab.click()
+    else:
+        page.click(".more-btn")
+        page.locator('#more-sheet button[data-id="%s"]' % view).click()
 
 
 def add_payment(page, desc, amount, category="Groceries", direction="Money out", who=None):
@@ -420,7 +426,8 @@ def test_INS01_insights_page(page):
 # ---------------------------------------------------------------- settings and example data
 
 def test_SET01_household_name_currency_and_people(page):
-    page.click("#btn-settings")
+    page.click("#btn-account")
+    page.click('#pop [data-act="settings"]')
     page.fill("#f-household", "The Parkers")
     page.select_option("#f-currency", "EUR")
     page.fill("#f-members", "Jo, Max, Kit")
@@ -565,7 +572,8 @@ def test_YEAR02_year_nav_stays_inside_the_fiscal_year_and_is_remembered(blank, e
 
 
 def test_PERSIST01_names_are_saved_in_the_data_file(page, server):
-    page.click("#btn-settings")
+    page.click("#btn-account")
+    page.click('#pop [data-act="settings"]')
     page.fill("#f-household", "The Test House")
     page.fill("#f-members", "Una, Dos")
     page.click("#dlg-ok")
@@ -817,4 +825,165 @@ def test_SYNCWIN04_window_fits_a_phone_and_buttons_do_not_overflow(browser, serv
     for sel in ("#sl-stop", "#sl-run", '[data-act="sl-close"]', "#sl-savelink"):
         b = p.locator(sel).first.bounding_box()
         assert b and b["x"] >= 0 and b["x"] + b["width"] <= 320, sel
+    p.context.close()
+
+
+# ---------------------------------------------------------------- account menu, sign-in, phone "More" tab
+
+def open_menu(page):
+    page.click("#btn-account")
+    expect(page.locator("#pop")).to_be_visible()
+
+
+def test_ACC01_avatar_opens_an_account_menu_with_people_and_state(blank):
+    open_menu(blank)
+    pop = blank.locator("#pop")
+    expect(pop).to_contain_text("Sign-in is off")
+    expect(pop).to_contain_text("Anyone on your home network")
+    expect(pop.locator(".acc-p")).to_have_count(2)                   # the household's two people
+    expect(pop).to_contain_text("No password yet")
+    for label in ("Turn on sign-in", "Household settings"):
+        expect(pop).to_contain_text(label)
+    expect(pop).not_to_contain_text("Sign out")                      # nobody is signed in
+    blank.keyboard.press("Escape")
+    expect(pop).to_be_hidden()
+    open_menu(blank)
+    blank.mouse.click(5, 400)                                        # a click outside closes it too
+    expect(blank.locator("#pop")).to_be_hidden()
+
+
+def test_ACC02_turning_on_sign_in_checks_the_password_and_locks_the_server(blank, empty_server):
+    open_menu(blank)
+    blank.click('#pop [data-act="acc-on"]')
+    blank.fill("#f-password", "short")
+    blank.fill("#f-again", "short")
+    blank.click("#dlg-ok")
+    expect(blank.locator("#dlg-err")).to_contain_text("at least 8")
+    blank.fill("#f-password", "correct horse")
+    blank.fill("#f-again", "different one")
+    blank.click("#dlg-ok")
+    expect(blank.locator("#dlg-err")).to_contain_text("do not match")
+    expect(blank.locator("#dlg")).to_be_visible()                    # the form stays open so nothing typed is lost
+    blank.select_option("#f-name", "Partner")
+    blank.fill("#f-again", "correct horse")
+    blank.click("#dlg-ok")
+    expect(blank.locator("#toast")).to_contain_text("Sign-in is on")
+    expect(blank.locator("#btn-account")).to_have_text("P", timeout=10000)      # the avatar now shows who is signed in
+    open_menu(blank)
+    expect(blank.locator("#pop")).to_contain_text("Sign-in is on")
+    expect(blank.locator("#pop .acc-p", has_text="Partner")).to_contain_text("You")
+    expect(blank.locator("#pop")).to_contain_text("Sign out")
+    assert empty_server.call("GET", "/api/data")[0] == 401
+
+
+def test_ACC03_sign_out_then_sign_in_from_the_login_page(blank, empty_server):
+    empty_server.call("POST", "/api/account/setup", {"name": "You", "password": "correct horse"})
+    blank.context.clear_cookies()
+    blank.reload()
+    expect(blank.locator("h1")).to_have_text("Sign in")
+    expect(blank.locator("#balance")).to_have_count(0)                # none of the app is there until sign-in
+    blank.fill("#n", "you")
+    blank.fill("#p", "wrong password")
+    blank.click("#go")
+    expect(blank.locator("#e")).to_contain_text("do not match")
+    blank.fill("#p", "correct horse")
+    blank.click("#go")
+    expect(blank.locator("#balance")).to_be_visible(timeout=10000)
+    open_menu(blank)
+    blank.click('#pop [data-act="signout"]')
+    expect(blank.locator("h1")).to_have_text("Sign in", timeout=10000)
+
+
+def test_ACC04_change_password_asks_for_the_current_one(blank, empty_server):
+    empty_server.call("POST", "/api/account/setup", {"name": "You", "password": "correct horse"})
+    blank.context.clear_cookies()
+    blank.reload()
+    blank.fill("#n", "You")
+    blank.fill("#p", "correct horse")
+    blank.click("#go")
+    expect(blank.locator("#balance")).to_be_visible(timeout=10000)
+    open_menu(blank)
+    blank.click('#pop [data-act="acc-pw"]')
+    blank.fill("#f-current", "not it")
+    blank.fill("#f-password", "brand new pass")
+    blank.fill("#f-again", "brand new pass")
+    blank.click("#dlg-ok")
+    expect(blank.locator("#dlg-err")).to_contain_text("current password is not right")
+    blank.fill("#f-current", "correct horse")
+    blank.click("#dlg-ok")
+    expect(blank.locator("#toast")).to_contain_text("Password changed")
+    assert empty_server.call("POST", "/api/login", {"name": "You", "password": "brand new pass"})[0] == 200
+
+
+def test_ACC05_turning_sign_in_off_needs_the_password(blank, empty_server):
+    empty_server.call("POST", "/api/account/setup", {"name": "You", "password": "correct horse"})
+    blank.context.clear_cookies()
+    blank.reload()
+    blank.fill("#n", "You")
+    blank.fill("#p", "correct horse")
+    blank.click("#go")
+    expect(blank.locator("#balance")).to_be_visible(timeout=10000)
+    open_menu(blank)
+    blank.click('#pop [data-act="acc-off"]')
+    blank.fill("#f-password", "wrong")
+    blank.click("#dlg-ok")
+    expect(blank.locator("#dlg-err")).to_contain_text("Type your password")
+    blank.fill("#f-password", "correct horse")
+    blank.click("#dlg-ok")
+    expect(blank.locator("#toast")).to_contain_text("Sign-in is off")
+    blank.wait_for_timeout(800)
+    assert empty_server.call("GET", "/api/data")[0] == 200
+
+
+@pytest.mark.parametrize("width", [320, 375])
+def test_ACC06_login_page_fits_a_phone(browser, empty_server, width):
+    empty_server.call("POST", "/api/account/setup", {"name": "You", "password": "correct horse"})
+    context = browser.new_context(viewport={"width": width, "height": 640})
+    page = context.new_page()
+    page.goto(empty_server.url + "/")
+    expect(page.locator("h1")).to_have_text("Sign in")
+    assert page.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
+    box = page.locator(".login").bounding_box()
+    assert box["x"] >= 0 and box["x"] + box["width"] <= width
+    context.close()
+
+
+def test_MORE01_phone_shows_four_tabs_and_a_more_tab(browser, server):
+    p = open_page(browser, server, viewport={"width": 375, "height": 812})
+    visible = [b.inner_text().strip() for b in p.locator("#nav button").all() if b.is_visible()]
+    assert visible == ["Overview", "Cards", "Payments", "Bills", "More"], visible
+    expect(p.locator("#more-sheet")).to_have_count(0)
+    p.click(".more-btn")
+    sheet = p.locator("#more-sheet")
+    expect(sheet).to_be_visible()
+    assert [b.inner_text().strip() for b in sheet.locator("button").all()] == ["Budgets", "Insights", "Household", "Accounts"]
+    expect(p.locator(".more-btn")).to_have_attribute("aria-expanded", "true")
+    sheet.locator("button", has_text="Insights").click()
+    expect(p.locator("#greet")).to_have_text("Insights")
+    expect(sheet).to_be_hidden()                                       # choosing a page closes the sheet
+    expect(p.locator(".more-btn")).to_have_class(re.compile(r"\bon\b"))   # More is highlighted while a hidden tab is open
+    p.click(".more-btn")
+    p.keyboard.press("Escape")
+    expect(sheet).to_be_hidden()
+    p.click(".more-btn")
+    p.mouse.click(180, 150)                                            # tapping elsewhere closes it
+    expect(sheet).to_be_hidden()
+    p.click('#nav button[data-id="payments"]')
+    expect(p.locator(".more-btn")).not_to_have_class(re.compile(r"\bon\b"))
+    assert p.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
+    p.context.close()
+
+
+def test_MORE02_desktop_has_no_more_tab_and_every_page_in_the_sidebar(page):
+    expect(page.locator(".more-btn")).to_be_hidden()
+    assert len([b for b in page.locator("#nav button").all() if b.is_visible()]) == 8
+
+
+def test_MORE03_resizing_from_phone_to_desktop_closes_the_sheet(browser, server):
+    p = open_page(browser, server, viewport={"width": 375, "height": 812})
+    p.click(".more-btn")
+    expect(p.locator("#more-sheet")).to_be_visible()
+    p.set_viewport_size({"width": 1200, "height": 800})
+    expect(p.locator("#more-sheet")).to_be_hidden()
+    expect(p.locator(".more-btn")).to_be_hidden()
     p.context.close()

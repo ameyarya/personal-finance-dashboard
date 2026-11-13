@@ -91,6 +91,21 @@ python3 server.py --cert data/cert.pem --key data/key.pem
 Other devices need the mkcert root certificate installed before they trust it. The certificate and key stay
 in `data/`, which is not in git.
 
+## Signing in
+
+By default anyone on your home network can open the page. To require a password, open the avatar menu (top
+right) and choose **Turn on sign-in**: pick who you are, set a password (8+ characters), and everyone else will
+need a name and password too. From the same menu you can give each person their own password, change yours,
+sign out, or turn sign-in off again (that asks for your password).
+
+Passwords are stored as salted hashes in `data/users.json`, sessions as hashes in `data/sessions.json`, both
+readable only by you and both outside git. Five wrong tries lock that device for a minute. If a password is
+forgotten, run this on the computer that serves the page:
+
+```bash
+.venv/bin/python server.py --reset-password YourName
+```
+
 ## Who can reach it
 
 Anyone on your home network can open and change the page. There is no password, so treat it like

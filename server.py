@@ -28,6 +28,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import auth
 import statements
 
 HERE = Path(__file__).resolve().parent
@@ -38,6 +39,7 @@ MAX_BODY = 8 * 1024 * 1024
 MIME = {".png": "image/png", ".ico": "image/svg+xml", ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
         ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml", ".json": "application/json"}
 
+AUTH = None
 lock = threading.RLock()
 SYNC = {"running": False, "log": [], "seq": 0, "cancel": threading.Event(), "proc": None, "phase": "", "done": 0, "total": 0, "started": ""}
 CFG = {}
@@ -569,6 +571,33 @@ class Handler(BaseHTTPRequestHandler):
             return None
         return body if isinstance(body, dict) else None
 
+    def token(self):
+        for part in (self.headers.get("Cookie") or "").split(";"):
+            k, _, v = part.strip().partition("=")
+            if k == "fd_session":
+                return v
+        return ""
+
+    def user(self):
+        return AUTH.session_user(self.token()) if AUTH else None
+
+    def cookie(self, token, age):
+        return {"Set-Cookie": "fd_session=%s; HttpOnly; SameSite=Strict; Path=/; Max-Age=%d%s" % (token, age, "; Secure" if CFG.get("https") else "")}
+
+    def locked_out(self, public):
+        """True (after answering) when sign-in is on and this request has no valid session."""
+        if not (AUTH and AUTH.enabled()) or self.user():
+            return False
+        parts = self.route()
+        if self.command == "GET" and parts in ([], ["index.html"], ["login"]):
+            page = PUBLIC / "login.html"
+            self.send_bytes(200, page.read_bytes(), MIME[".html"])
+            return True
+        if public:
+            return False
+        self.send_json(401, {"error": "Sign in first.", "signin": True})
+        return True
+
     def route(self):
         return [p for p in self.path.split("?", 1)[0].split("/") if p]
 
@@ -576,6 +605,11 @@ class Handler(BaseHTTPRequestHandler):
         if not self.allowed():
             return self.send_json(403, {"error": "forbidden"})
         parts = self.route()
+        public = parts in (["api", "session"], ["app.css"], ["favicon.svg"], ["favicon.ico"], ["icon-192.png"])
+        if self.locked_out(public):
+            return
+        if parts == ["api", "session"]:
+            return self.send_json(200, self.session_info())
         if parts == ["api", "data"]:
             with lock:
                 return self.send_json(200, public_store())
@@ -610,13 +644,58 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_bytes(200, target.read_bytes(), MIME[target.suffix])
         self.send_json(404, {"error": "not found"})
 
+    def session_info(self):
+        on, user = AUTH.enabled(), self.user()
+        info = {"required": on, "user": user, "minLength": auth.MIN_LENGTH}
+        if user or not on:
+            info["users"] = AUTH.names()
+        return info
+
+    def account(self, parts, body):
+        """Sign-in, sign-out and password changes. Raises auth.AuthError with a message that is safe to show."""
+        user, ip = self.user(), self.client_address[0]
+        if parts == ["api", "login"]:
+            token, name = AUTH.login(str(body.get("name", "")), str(body.get("password", "")), ip)
+            return self.send_bytes(200, json.dumps({"user": name}).encode(), "application/json; charset=utf-8", self.cookie(token, auth.SESSION_DAYS * 86400))
+        if parts == ["api", "logout"]:
+            AUTH.logout(self.token())
+            return self.send_bytes(200, b'{"ok": true}', "application/json; charset=utf-8", self.cookie("", 0))
+        if parts == ["api", "account", "setup"]:
+            name, password = str(body.get("name", "")).strip(), body.get("password")
+            if AUTH.names() and not user:
+                return self.send_json(401, {"error": "Sign in first.", "signin": True})
+            if AUTH._key(name) in AUTH.users and AUTH.users[AUTH._key(name)]:
+                raise auth.AuthError("%s already has a password. Use Change password instead." % name)
+            first = not AUTH.names()
+            AUTH.set_password(name, password, require=first or AUTH.enabled())
+            if first:
+                token, who = AUTH.login(name, password, ip)
+                return self.send_bytes(200, json.dumps({"user": who}).encode(), "application/json; charset=utf-8", self.cookie(token, auth.SESSION_DAYS * 86400))
+            return self.send_json(200, {"ok": True})
+        if not user:
+            return self.send_json(401, {"error": "Sign in first.", "signin": True})
+        if parts == ["api", "account", "password"]:
+            AUTH.change_password(user, str(body.get("current", "")), body.get("new"), keep_token=self.token())
+            return self.send_json(200, {"ok": True})
+        if parts == ["api", "account", "require"]:
+            if not body.get("on"):
+                if not AUTH.verify(user, str(body.get("password", ""))):
+                    raise auth.AuthError("Type your password to turn sign-in off.")
+            AUTH.set_required(bool(body.get("on")))
+            return self.send_json(200, {"ok": True, "required": AUTH.enabled()})
+        return self.send_json(404, {"error": "not found"})
+
     def do_POST(self):
         if not self.allowed():
             return self.send_json(403, {"error": "forbidden"})
         parts, body = self.route(), self.read_body()
+        if self.locked_out(parts in (["api", "login"], ["api", "account", "setup"], ["api", "logout"])):
+            return
         if body is None:
             return self.send_json(400, {"error": "The request needs a JSON object."})
         try:
+            if parts[:2] in (["api", "login"], ["api", "logout"]) or parts[:2] == ["api", "account"]:
+                return self.account(parts, body)
             if parts == ["api", "batch"]:
                 return self.batch(body)
             if parts == ["api", "sync", "stop"]:
@@ -660,6 +739,8 @@ class Handler(BaseHTTPRequestHandler):
         if not self.allowed():
             return self.send_json(403, {"error": "forbidden"})
         parts = self.route()
+        if self.locked_out(False):
+            return
         if not (len(parts) == 4 and parts[:2] == ["api", "doc"] and parts[2] in COLLECTIONS and ID_RE.match(parts[3])):
             return self.send_json(404, {"error": "not found"})
         col, doc_id = parts[2], parts[3]
@@ -734,10 +815,22 @@ def main():
     ap.add_argument("--data", default=os.environ.get("FINANCES_DATA", str(HERE / "data")), help="folder that holds data.json")
     ap.add_argument("--cert", default=os.environ.get("FINANCES_CERT", ""), help="TLS certificate (PEM). With --key, the page is served over https")
     ap.add_argument("--key", default=os.environ.get("FINANCES_KEY", ""), help="TLS private key (PEM)")
+    ap.add_argument("--reset-password", metavar="NAME", help="set a new sign-in password for NAME, then exit (for a forgotten password)")
     ap.add_argument("--empty", action="store_true", help="start with no example data")
     ap.add_argument("--quiet", action="store_true", help="do not log each request")
     args = ap.parse_args()
     CFG.update(data=Path(args.data).resolve(), empty=args.empty, quiet=args.quiet)
+    global AUTH
+    AUTH = auth.Auth(CFG["data"])
+    if args.reset_password:
+        import getpass
+        pw = getpass.getpass("New password for %s: " % args.reset_password)
+        if pw != getpass.getpass("Again: "):
+            sys.exit("The two passwords differ. Nothing changed.")
+        AUTH.set_password(args.reset_password, pw, require=AUTH.required or True)
+        print("Password set for %s." % args.reset_password)
+        return
+    CFG["https"] = bool(args.cert and args.key)
     STORE.update(load())
     if not data_file().exists():
         with lock:

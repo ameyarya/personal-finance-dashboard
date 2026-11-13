@@ -44,6 +44,7 @@ svg.ic{width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-wid
 .logo svg{width:20px;height:20px;stroke-width:2}
 .brand b{display:block;font:600 16px/1.15 var(--display);overflow-wrap:anywhere} .brand small{color:var(--muted);font-size:12px}
 #nav{display:flex;flex-direction:column;gap:3px;position:relative}
+#nav .more-btn{display:none}
 #nav button{display:flex;align-items:center;gap:12px;padding:10px 12px;border:0;background:none;border-radius:13px;cursor:pointer;font-weight:500;text-align:left;color:var(--fg);position:relative;z-index:1}
 #nav button:hover{background:var(--glass2)}
 #nav button.on{color:var(--accent-ink)}
@@ -183,9 +184,9 @@ th:first-child,td:first-child{text-align:left}
 .err{color:var(--bad)}
 dialog.wide{width:min(640px,calc(100vw - 32px))}
 @media (max-width:880px){
-  #nav{overflow-x:auto;justify-content:flex-start;scrollbar-width:none}
-  #nav::-webkit-scrollbar{display:none}
-  #nav button{flex:0 0 68px}
+  #nav{justify-content:space-between}
+  #nav button[data-more]{display:none}
+  #nav .more-btn{display:flex}
 }
 
 /* ---- motion ---- */
@@ -408,3 +409,25 @@ code{font:12px ui-monospace,Menlo,monospace;background:var(--glass2);border-radi
 .sl-acts{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.sl-acts .spacer{flex:1}
 .btn.danger{border-color:color-mix(in srgb,var(--bad) 60%,transparent);color:var(--bad)}
 @media (max-width:560px){.sl-link{flex-direction:column}.sl-acts .spacer{display:none}}
+
+/* ---- account menu ---- */
+#pop.acc{width:min(380px,calc(100vw - 32px));max-height:min(80vh,640px);overflow:auto}
+.acc-h{display:flex;gap:12px;align-items:center;padding:10px}.acc-h .t b{display:block;font:600 17px var(--display)}.acc-h small{color:var(--muted)}
+.avatar.big{width:52px;height:52px;font-size:17px;cursor:default}.avatar.big:hover{transform:none}
+.acc-s{display:flex;gap:10px;align-items:flex-start;margin:2px 6px 8px;padding:10px 12px;border-radius:14px;border:1px solid var(--line);background:var(--glass);font-size:13px}
+.acc-s.warn{border-color:color-mix(in srgb,var(--out) 45%,var(--line))}.acc-s svg{margin-top:2px}
+.pop-g{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:10px 10px 4px}
+.acc-p{display:flex;gap:12px;align-items:center;padding:7px 10px;border-radius:12px}.acc-p .t{flex:1;min-width:0}.acc-p .t b{display:block;font-weight:500}.acc-p .t small{color:var(--muted);font-size:12px}
+.pop-i.danger b{color:var(--bad)}
+#dlg-err:empty{display:none}
+
+/* ---- phone: the extra tabs live under More ---- */
+#more-sheet{position:fixed;left:10px;right:10px;bottom:calc(74px + env(safe-area-inset-bottom,0px));z-index:40;display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:8px;border-radius:20px;border:1px solid var(--line);
+  background:color-mix(in srgb,var(--bg) 78%,transparent);-webkit-backdrop-filter:blur(24px) saturate(1.6);backdrop-filter:blur(24px) saturate(1.6);box-shadow:var(--spec),0 24px 60px -20px rgba(0,0,0,.6)}
+#more-sheet[hidden]{display:none}#more-sheet.in{animation:popmenu .3s var(--ease) both;transform-origin:50% 100%}
+#more-sheet button{display:flex;align-items:center;gap:10px;padding:13px 14px;border:1px solid var(--line);border-radius:14px;background:var(--glass);cursor:pointer;font-weight:500;text-align:left}
+#more-sheet button.on{background:linear-gradient(160deg,color-mix(in srgb,var(--accent) 38%,rgba(255,255,255,.12)),var(--tint));border-color:rgba(255,255,255,.4)}
+@media (min-width:881px){#more-sheet{display:none!important}}
+
+#pop{background:color-mix(in srgb,var(--bg) 98%,transparent)}
+.avatar.big{display:grid;place-items:center;flex:none}

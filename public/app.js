@@ -20,6 +20,7 @@ const ICONS={grid:'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',swap:'M7 
  upload:'M12 16V4M7 9l5-5 5 5M5 20h14',download:'M12 4v12M7 11l5 5 5-5M5 20h14'};
 const ic=(n,col)=>'<svg class="ic" viewBox="0 0 24 24"'+(col?' style="color:var(--'+col+')"':'')+' aria-hidden="true"><path d="'+(ICONS[n]||ICONS.dots)+'"/></svg>';
 const catIco=(c,col)=>{const m=CATMETA[c]||CATMETA.Other;return '<span class="ico">'+ic(m[0],col||m[1])+'</span>'};
+const MAIN_TABS=4;
 const VIEWS=[['overview','Overview','grid'],['cards','Cards','card'],['payments','Payments','swap'],['bills','Bills','cal'],['budgets','Budgets','pie'],['insights','Insights','chart'],['household','Household','users'],['accounts','Accounts','bank']];
 const LOCALE={USD:'en-US',EUR:'en-IE',GBP:'en-GB',CAD:'en-CA',AUD:'en-AU',INR:'en-IN',SGD:'en-SG',AED:'en-AE',JPY:'ja-JP',MXN:'es-MX'};
 const DEF={household:'Our household',currency:'USD',opening:0,members:['You','Partner']};
@@ -28,7 +29,7 @@ const iso=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
 const NOW=new Date(), TODAY=iso(NOW), YM=TODAY.slice(0,7);
 const fyOf=()=>{const y=S.settings&&+S.settings.fiscalYear;return y?{lo:y+'-01',hi:y+'-12'}:{lo:'0000-00',hi:YM}};
 const hashView=()=>{const h=location.hash.slice(1);return VIEWS.some(v=>v[0]===h)?h:'overview'};
-const S={sync:{},period:'month',cardIdx:0,flip:false,settings:null,txRaw:[],tx:[],budgets:{},rec:[],accounts:[],rules:[],ready:false,db:null,month:YM,view:hashView(),span:6,noteIdx:0,note:'',confirmClear:false,q:'',fcat:'',anim:'page'};
+const S={session:{},sync:{},period:'month',cardIdx:0,flip:false,settings:null,txRaw:[],tx:[],budgets:{},rec:[],accounts:[],rules:[],ready:false,db:null,month:YM,view:hashView(),span:6,noteIdx:0,note:'',confirmClear:false,q:'',fcat:'',anim:'page'};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const cfg=()=>Object.assign({},DEF,S.settings||{});
@@ -101,7 +102,7 @@ function restart(el,cls){if(!el)return;el.classList.remove(cls);void el.offsetWi
 function countUp(root){if(REDUCED&&REDUCED.matches)return;
   root.querySelectorAll('[data-n]').forEach(el=>{const to=+el.dataset.n,t0=performance.now(),D=950;if(!isFinite(to))return;
     const f=t=>{if(!el.isConnected)return;const p=Math.min((t-t0)/D,1),e=1-Math.pow(1-p,4);el.textContent=fmt(to*e);if(p<1)requestAnimationFrame(f)};requestAnimationFrame(f)})}
-function placePill(){const p=document.querySelector('.navpill'),b=document.querySelector('#nav button.on');if(!p||!b||!b.offsetWidth)return;
+function placePill(){const p=document.querySelector('.navpill'),b=Array.from(document.querySelectorAll('#nav button.on')).find(x=>x.offsetWidth>0);if(!p||!b)return;
   p.style.width=b.offsetWidth+'px';p.style.height=b.offsetHeight+'px';p.style.transform='translate('+b.offsetLeft+'px,'+b.offsetTop+'px)';
   if(!p.classList.contains('ready'))requestAnimationFrame(()=>requestAnimationFrame(()=>p.classList.add('ready')))}
 window.addEventListener('resize',placePill);if(document.fonts&&document.fonts.ready)document.fonts.ready.then(placePill);
@@ -126,12 +127,13 @@ function render(){
   {const b=fyOf(),y=S.period==='year';$('next').disabled=y?S.month.slice(0,4)>=b.hi.slice(0,4):S.month>=b.hi;$('prev').disabled=y?S.month.slice(0,4)<=b.lo.slice(0,4):S.month<=b.lo}
   $('ic-search').innerHTML=ic('search');$('btn-add').innerHTML=ic('plus');$('btn-bell').innerHTML=ic('bell');$('btn-sync').innerHTML=ic('refresh');$('btn-sync').classList.toggle('spin',!!(S.sync&&S.sync.running));
   if(SL.was&&!(S.sync&&S.sync.running)&&!SL.open)toast(S.sync.message||'Sync finished');SL.was=!!(S.sync&&S.sync.running);
-  $('btn-settings').textContent=(c.household||'H').split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase();
+  {const who=(S.session&&S.session.user)||c.household||'H';$('btn-account').textContent=who.split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase();$('btn-account').title=(S.session&&S.session.user?S.session.user+' · ':'')+c.household;}
   $('btn-bell').classList.toggle('has',S.ready&&notices(m).length>0);
   const th=themeNow();$('btn-theme').innerHTML=ic(th==='light'?'sun':'moon');$('btn-theme').title='Switch to '+(th==='light'?'dark':'light')+' theme';$('btn-theme').setAttribute('aria-label',$('btn-theme').title);if(document.documentElement.dataset.theme!==th)document.documentElement.dataset.theme=th;
   const nv=$('nav');
-  if(!nv.querySelector('button'))nv.innerHTML='<i class="navpill" aria-hidden="true"></i>'+VIEWS.map(v=>'<button data-act="view" data-id="'+v[0]+'">'+ic(v[2])+'<span>'+v[1]+'</span></button>').join('');
-  nv.querySelectorAll('button').forEach(b=>{const on=b.dataset.id===S.view;b.classList.toggle('on',on);if(on)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
+  if(!nv.querySelector('button'))nv.innerHTML='<i class="navpill" aria-hidden="true"></i>'+VIEWS.map((v,i)=>'<button data-act="view" data-id="'+v[0]+'"'+(i>=MAIN_TABS?' data-more="1"':'')+'>'+ic(v[2])+'<span>'+v[1]+'</span></button>').join('')+'<button class="more-btn" data-act="more" aria-haspopup="true" aria-expanded="false">'+ic('dots')+'<span>More</span></button>';
+  const inMore=VIEWS.findIndex(v=>v[0]===S.view)>=MAIN_TABS;nv.querySelector('.more-btn').classList.toggle('on',inMore);if(nv._v!==S.view){closeMore();nv._v=S.view}
+  nv.querySelectorAll('button[data-id]').forEach(b=>{const on=b.dataset.id===S.view;b.classList.toggle('on',on);if(on)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
   placePill();
   const cm=m.cur?m:monthData(YM);
   if(S.settings&&S.settings.fiscalYear)$('safe').hidden=true;
@@ -429,6 +431,16 @@ function closeSyncLog(){SL.open=false;$('synclog').hidden=true;document.body.sty
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&SL.open){e.preventDefault();closeSyncLog()}});
 document.addEventListener('click',e=>{if(e.target.id==='synclog')closeSyncLog()});
 
+/* ---------- the phone's "More" tab ---------- */
+function closeMore(){const s=document.getElementById('more-sheet'),b=document.querySelector('.more-btn');if(s)s.hidden=true;if(b)b.setAttribute('aria-expanded','false')}
+function toggleMore(){let s=document.getElementById('more-sheet');if(!s){s=document.createElement('div');s.id='more-sheet';s.setAttribute('role','menu');s.hidden=true;document.body.appendChild(s)}
+  const open=s.hidden;if(!open)return closeMore();
+  s.innerHTML=VIEWS.slice(MAIN_TABS).map(v=>'<button role="menuitem" data-act="view" data-id="'+v[0]+'"'+(v[0]===S.view?' class="on" aria-current="page"':'')+'>'+ic(v[2])+'<span>'+v[1]+'</span></button>').join('');
+  s.hidden=false;restart(s,'in');document.querySelector('.more-btn').setAttribute('aria-expanded','true')}
+document.addEventListener('click',e=>{const s=document.getElementById('more-sheet');if(s&&!s.hidden&&!e.target.closest('.more-btn'))closeMore()},true);
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeMore()});
+window.addEventListener('resize',()=>{if(window.innerWidth>880)closeMore()});
+
 /* ---------- search palette and popovers ---------- */
 let palSel=0,palItems=[];
 function palList(q){q=q.trim().toLowerCase();const out=[];
@@ -458,13 +470,39 @@ document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLower
   else if(e.key==='Escape'&&!$('pop').hidden)closePop()});
 if(!/Mac|iPhone|iPad/.test(navigator.platform||navigator.userAgent))$('kbd').textContent='Ctrl K';
 let popKind='';
-function closePop(){popKind='';const p=$('pop');if(p.hidden)return;p.classList.remove('in');p.hidden=true;$('btn-bell').setAttribute('aria-expanded','false');}
+function closePop(){popKind='';const p=$('pop');if(p.hidden)return;p.classList.remove('in');p.hidden=true;$('btn-bell').setAttribute('aria-expanded','false');$('btn-account').setAttribute('aria-expanded','false');}
 function togglePop(kind){if(popKind===kind)return closePop();const p=$('pop'),m=monthData(curMo());popKind=kind;let h='';
   if(kind==='bell'){const n=notices(m);h='<div class="pop-h">'+ic('spark','accent')+'<b>Noticed</b><small>'+n.length+'</small></div>'+(n.length?n.map(x=>'<button class="pop-i" data-act="view" data-id="'+x.v+'"><span class="ico">'+ic(x.i,'accent')+'</span><span class="t"><b>'+x.t+'</b><small>'+x.b+'</small></span></button>').join(''):'<div class="empty">Nothing stands out this month.</div>')}
-  p.innerHTML=h;p.hidden=false;restart(p,'in');$('btn-bell').setAttribute('aria-expanded','true')}
-document.addEventListener('click',e=>{if(popKind&&!e.target.closest('#pop,#btn-bell'))closePop();else if(popKind&&e.target.closest('#pop [data-act]'))closePop()},true);
+  if(kind==='account')h=accountMenu();
+  p.innerHTML=h;p.hidden=false;p.className=kind==='account'?'acc':'';restart(p,'in');$(kind==='bell'?'btn-bell':'btn-account').setAttribute('aria-expanded','true')}
+document.addEventListener('click',e=>{if(popKind&&!e.target.closest('#pop,#btn-bell,#btn-account'))closePop();else if(popKind&&e.target.closest('#pop [data-act]'))closePop()},true);
 
-/* ---------- toast, forms, dialogs ---------- */
+/* ---------- account menu: who is signed in, passwords, sign-in on/off ---------- */
+const initials=n=>String(n||'?').trim().split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase();
+function accountMenu(){
+  const se=S.session||{},u=se.user,on=!!se.required,c=cfg(),has=new Set((se.users||[]).map(x=>x.toLowerCase())),people=c.members.slice();
+  (se.users||[]).forEach(x=>{if(!people.some(p=>p.toLowerCase()===x.toLowerCase()))people.push(x)});
+  const row=(n)=>{const me=u&&u.toLowerCase()===n.toLowerCase(),pw=has.has(n.toLowerCase());
+    return '<div class="acc-p"><span class="av">'+esc(initials(n))+'</span><div class="t"><b>'+esc(n)+(me?' <span class="pill ok">You</span>':'')+'</b><small>'+(pw?'Can sign in':'No password yet')+'</small></div>'+
+      (me?'<button class="btn sm" data-act="acc-pw">Change password</button>':(pw?'':'<button class="btn sm" data-act="acc-setup" data-id="'+esc(n)+'">Set password</button>'))+'</div>'};
+  return '<div class="acc-h"><span class="avatar big">'+esc(initials(u||c.household))+'</span><div class="t"><b>'+esc(u||c.household)+'</b><small>'+(u?esc(c.household)+' · signed in':'Not signed in')+'</small></div></div>'+
+   '<div class="acc-s '+(on?'ok':'warn')+'">'+ic(on?'info':'bolt',on?'accent':'out')+'<span>'+(on?'<b>Sign-in is on.</b> Everyone must sign in to open this page.':'<b>Sign-in is off.</b> Anyone on your home network can open this page.')+'</span></div>'+
+   '<div class="pop-g">People</div>'+people.map(row).join('')+
+   '<div class="pop-g">Account</div>'+
+   (on?'':'<button class="pop-i" data-act="acc-on"><span class="ico">'+ic('bolt')+'</span><span class="t"><b>Turn on sign-in</b><small>Ask for a name and password</small></span></button>')+
+   (u?'<button class="pop-i" data-act="acc-pw"><span class="ico">'+ic('sliders')+'</span><span class="t"><b>Change password</b></span></button>':'')+
+   '<button class="pop-i" data-act="settings"><span class="ico">'+ic('sliders')+'</span><span class="t"><b>Household settings</b><small>Name, people, currency, budgets</small></span></button>'+
+   (on?'<button class="pop-i" data-act="acc-off"><span class="ico">'+ic('info')+'</span><span class="t"><b>Turn off sign-in</b></span></button>':'')+
+   (u?'<button class="pop-i danger" data-act="signout"><span class="ico">'+ic('down')+'</span><span class="t"><b>Sign out</b></span></button>':'');
+}
+function pwProblem(v,field){if((v[field]||'').length<(S.session&&S.session.minLength||8))return 'Use at least '+(S.session&&S.session.minLength||8)+' characters.';if(v.again!==undefined&&v[field]!==v.again)return 'The two passwords do not match.';return ''}
+async function acctCall(path,body){try{await api(path,body);return ''}catch(e){return e.message}}
+function setPasswordForm(name,first){
+  const fields=(name?[]:[{id:'name',label:'Who is this for?',options:cfg().members,value:cfg().members[0]}]).concat([{id:'password',label:'Password',type:'password',autocomplete:'new-password'},{id:'again',label:'Type it again',type:'password',autocomplete:'new-password'}]);
+  openForm({title:name?'Set a password for '+name:'Turn on sign-in',submit:name?'Save password':'Turn on',fields:fields,
+    async run(v){const w=name||v.name,p=pwProblem(v,'password');if(p)return p;const m=await acctCall('api/account/setup',{name:w,password:v.password});if(m)return m;
+      toast(first?'Sign-in is on':'Password saved');if(first)setTimeout(()=>location.reload(),400);else{S.session=await fetch('api/session').then(r=>r.json());render()}return ''}})}
+
 let toastT=0;
 function toast(msg,undo){const t=$('toast');t.hidden=false;t.innerHTML='<span>'+esc(msg)+'</span>'+(undo?'<button id="toast-undo">Undo</button>':'');
   if(undo)$('toast-undo').onclick=()=>{t.hidden=true;undo()};clearTimeout(toastT);toastT=setTimeout(()=>{t.hidden=true},6000)}
@@ -474,14 +512,16 @@ function openForm(o){
   const d=$('dlg');d.className='';
   d.innerHTML='<form id="dlg-form"><h2>'+esc(o.title)+'</h2>'+o.fields.map(f=>{
     if(f.html)return f.html;
-    const id='f-'+f.id,a=' id="'+id+'" name="'+f.id+'"'+(f.required===false?'':' required');
+    const id='f-'+f.id,a=' id="'+id+'" name="'+f.id+'"'+(f.required===false?'':' required')+(f.autocomplete?' autocomplete="'+f.autocomplete+'"':'');
     const ctl=f.options?'<select'+a+'>'+f.options.map(x=>'<option'+(x===f.value?' selected':'')+'>'+esc(x)+'</option>').join('')+'</select>'
       :'<input'+a+' type="'+(f.type||'text')+'" value="'+esc(f.value==null?'':f.value)+'"'+(f.type==='number'?' step="any" min="'+(f.min==null?0:f.min)+'"'+(f.max?' max="'+f.max+'"':'')+' inputmode="decimal"':'')+(f.placeholder?' placeholder="'+esc(f.placeholder)+'"':'')+'>';
     return '<div class="fld"><label for="'+id+'">'+esc(f.label)+'</label>'+ctl+'</div>'}).join('')+
-    '<div class="dlg-acts">'+(o.extra?'<button type="button" class="btn" id="dlg-extra">'+esc(o.extra.label)+'</button>':'')+'<div><button type="button" class="btn" id="dlg-cancel">Cancel</button><button class="btn primary" id="dlg-ok">'+esc(o.submit||'Save')+'</button></div></div></form>';
+    '<div class="err" id="dlg-err" role="alert"></div><div class="dlg-acts">'+(o.extra?'<button type="button" class="btn" id="dlg-extra">'+esc(o.extra.label)+'</button>':'')+'<div><button type="button" class="btn" id="dlg-cancel">Cancel</button><button class="btn primary" id="dlg-ok">'+esc(o.submit||'Save')+'</button></div></div></form>';
   $('dlg-cancel').onclick=()=>d.close();
   if(o.extra)$('dlg-extra').onclick=()=>{d.close();o.extra.run()};
-  $('dlg-form').onsubmit=e=>{e.preventDefault();const v={};o.fields.forEach(f=>{if(!f.html)v[f.id]=$('f-'+f.id).value.trim()});d.close();o.onSubmit(v)};
+  $('dlg-form').onsubmit=async e=>{e.preventDefault();const v={};o.fields.forEach(f=>{if(!f.html){const x=$('f-'+f.id).value;v[f.id]=f.type==='password'?x:x.trim()}});
+    if(o.run){$('dlg-ok').disabled=true;const msg=await o.run(v);$('dlg-ok').disabled=false;if(msg){$('dlg-err').textContent=msg;return}d.close();return}
+    d.close();o.onSubmit(v)};
   d.showModal();
 }
 function txFields(t){const c=cfg(),inc=t&&t.amount>0;return [
@@ -493,6 +533,7 @@ function txFromForm(v){const amt=Math.abs(parseFloat(v.amount));if(!(amt>0)||!/^
 const ruleId=s=>'r-'+s.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,80);
 
 async function api(path,body){let r;try{r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})})}catch(e){throw{message:'Cannot reach the server.'}}
+  if(r.status===401&&!/api\/(login|account)/.test(path)){location.reload();throw{message:'Please sign in again.'}}
   const j=await r.json().catch(()=>({}));if(!r.ok)throw{message:j.error||'The server refused the request.'};return j}
 
 let csvText='';
@@ -512,6 +553,15 @@ async function csvPreview(flip){
 
 const col=n=>S.db.collection(n);
 const ACT={
+  more(){toggleMore()},
+  account(){togglePop('account')},
+  'acc-setup'(id){setPasswordForm(id,!(S.session&&S.session.required)&&!((S.session&&S.session.users)||[]).length)},
+  'acc-on'(){setPasswordForm('',true)},
+  'acc-pw'(){openForm({title:'Change password',submit:'Change password',fields:[{id:'current',label:'Current password',type:'password',autocomplete:'current-password'},{id:'password',label:'New password',type:'password',autocomplete:'new-password'},{id:'again',label:'Type the new one again',type:'password',autocomplete:'new-password'}],
+    async run(v){const p=pwProblem(v,'password');if(p)return p;const m=await acctCall('api/account/password',{current:v.current,new:v.password});if(m)return m;toast('Password changed. Other devices will ask you to sign in again.');return ''}})},
+  'acc-off'(){openForm({title:'Turn off sign-in',submit:'Turn off',fields:[{html:'<p class="sub">Anyone on your home network will be able to open this page without a password.</p>'},{id:'password',label:'Your password',type:'password',autocomplete:'current-password'}],
+    async run(v){const m=await acctCall('api/account/require',{on:false,password:v.password});if(m)return m;toast('Sign-in is off');setTimeout(()=>location.reload(),400);return ''}})},
+  async signout(){try{await api('api/logout',{})}catch(e){}location.reload()},
   async sync(){openSyncLog();try{await api('api/sync',{});slPoll()}catch(e){toast(e.message)}},
   'sl-open'(){openSyncLog()}, 'sl-close'(){closeSyncLog()}, 'sl-run'(){ACT.sync()},
   async 'sl-full'(){try{await api('api/sync',{force:true});slPoll()}catch(e){toast(e.message)}},
@@ -591,7 +641,7 @@ function localDB(){
   let data={},ver=-1;const subs=[];
   const rid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
   const snapDoc=(c,id)=>{const d=(data[c]||{})[id];return{id,exists:!!d,data:()=>d}};
-  async function pull(){const r=await fetch('api/data',{cache:'no-store'});if(!r.ok)throw{message:'The server is not answering.'};const j=await r.json();
+  async function pull(){const r=await fetch('api/data',{cache:'no-store'});if(r.status===401){location.reload();throw{message:'Please sign in again.'}}if(!r.ok)throw{message:'The server is not answering.'};const j=await r.json();
     if(j.version!==ver||JSON.stringify(j.sync)!==JSON.stringify(S.sync)){ver=j.version;data=j.collections||{};S.sync=j.sync||{};subs.forEach(f=>f())}}
   async function req(method,path,body){let r;try{r=await fetch(path,{method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined})}catch(e){throw{message:'Cannot reach the server. Nothing was saved.'}}
     if(!r.ok)throw{message:'The server refused the change.'};await pull()}
@@ -600,6 +650,7 @@ function localDB(){
   return {doc:p=>{const a=p.split('/');return docRef(a[0],a[1])},collection:colRef,batch:w=>w.length?req('POST','api/batch',{writes:w}):Promise.resolve(),pull,onChange:f=>subs.push(f),get:(c,id)=>snapDoc(c,id)};
 }
 async function boot(){
+  try{S.session=await fetch('api/session',{cache:'no-store'}).then(r=>r.json())}catch(e){S.session={}}
   render();
   const db=localDB();S.db=db;
   db.onChange(()=>{const s=db.get('settings','main');S.settings=s.exists?s.data():null;S.txRaw=db.collection('transactions').rows();S.rec=db.collection('recurring').rows();
