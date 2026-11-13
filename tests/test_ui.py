@@ -1147,10 +1147,14 @@ def test_YEARS02_the_date_arrows_reach_every_year_that_has_statements(blank, emp
 
 
 def test_YEARS03_the_balance_starts_at_the_opening_date_not_earlier(blank, empty_server):
-    empty_server.call("PUT", "/api/doc/settings/main", {"household": "H", "currency": "USD", "opening": 1000, "members": ["A"], "fiscalYear": 2025})
+    empty_server.call("PUT", "/api/doc/settings/main", {"household": "H", "currency": "USD", "opening": 1000, "members": ["A"], "fiscalYear": 2025, "openingDate": "2025-01-01"})
     rows = [("2024-12-20", 500, "Income", True), ("2025-01-05", -100, "Dining", True), ("2025-01-06", 40, "Income", True)]
     for i, (d, a, c, cash) in enumerate(rows):
         empty_server.call("PUT", "/api/doc/transactions/c%d" % i, {"date": d, "desc": "R%d" % i, "amount": a, "category": c, "who": "", "cash": cash, "source": "pdf"})
     blank.reload()
     blank.click('#period [data-id="year"]')
     expect(blank.locator("#balance")).to_have_text("$940")           # 1000 - 100 + 40; the December 2024 deposit predates the opening balance
+    empty_server.call("PUT", "/api/doc/settings/main", {"household": "H", "currency": "USD", "opening": 1000, "members": ["A"], "fiscalYear": 2025})
+    blank.reload()
+    blank.click('#period [data-id="year"]')
+    expect(blank.locator("#balance")).to_have_text("$1,440")          # with no opening date, every statement counts, earlier years included

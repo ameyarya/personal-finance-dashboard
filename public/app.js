@@ -29,7 +29,7 @@ const iso=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
 const NOW=new Date(), TODAY=iso(NOW), YM=TODAY.slice(0,7);
 const fromStatements=()=>!!(S.settings&&S.settings.fiscalYear)||S.txRaw.some(t=>t.source==='statement'||t.source==='pdf');
 const fyOf=()=>{if(!fromStatements()||!S.tx.length)return {lo:'0000-00',hi:YM};const ms=S.tx.filter(t=>t.date).map(t=>t.date.slice(0,7)).sort();return {lo:ms[0],hi:ms[ms.length-1]}};
-const openDate=()=>(S.settings&&(S.settings.openingDate||(S.settings.fiscalYear?S.settings.fiscalYear+'-01-01':'')))||'';
+const openDate=()=>(S.settings&&S.settings.openingDate)||'';
 const hashView=()=>{const h=location.hash.slice(1);return VIEWS.some(v=>v[0]===h)?h:'overview'};
 const S={session:{},sync:{},period:'month',cardIdx:0,flip:false,settings:null,txRaw:[],tx:[],budgets:{},rec:[],rules:[],ready:false,db:null,month:YM,view:hashView(),span:6,noteIdx:0,note:'',confirmClear:false,q:'',fcat:'',anim:'page'};
 const $=id=>document.getElementById(id);
