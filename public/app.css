@@ -43,10 +43,10 @@ svg.ic{width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-wid
 .logo{width:38px;height:38px;border-radius:12px;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;flex:none}
 .logo svg{width:20px;height:20px;stroke-width:2}
 .brand b{display:block;font:600 16px/1.15 var(--display);overflow-wrap:anywhere} .brand small{color:var(--muted);font-size:12px}
-#nav{display:flex;flex-direction:column;gap:3px}
-#nav button{display:flex;align-items:center;gap:12px;padding:10px 12px;border:0;background:none;border-radius:13px;cursor:pointer;font-weight:500;text-align:left;color:var(--fg)}
+#nav{display:flex;flex-direction:column;gap:3px;position:relative}
+#nav button{display:flex;align-items:center;gap:12px;padding:10px 12px;border:0;background:none;border-radius:13px;cursor:pointer;font-weight:500;text-align:left;color:var(--fg);position:relative;z-index:1}
 #nav button:hover{background:var(--glass2)}
-#nav button.on{background:var(--accent);color:var(--accent-ink)}
+#nav button.on{color:var(--accent-ink)}
 .safe{margin-top:auto;border:1px solid var(--line);background:var(--glass);border-radius:16px;padding:12px 14px}
 .safe span{color:var(--muted);font-size:12.5px;display:block} .safe b{display:block;font:600 22px var(--display);color:var(--accent);margin:2px 0}
 .main{min-width:0;padding:22px 24px 26px;display:flex;flex-direction:column;gap:16px}
@@ -187,3 +187,123 @@ dialog.wide{width:min(640px,calc(100vw - 32px))}
   #nav::-webkit-scrollbar{display:none}
   #nav button{flex:0 0 68px}
 }
+
+/* ---- motion ---- */
+:root{--ease:cubic-bezier(.22,1,.36,1);--spring:cubic-bezier(.34,1.56,.64,1)}
+@keyframes rise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+@keyframes fadein{from{opacity:0}to{opacity:1}}
+@keyframes growx{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+@keyframes growy{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+@keyframes popin{from{opacity:0;transform:scale(.4)}to{opacity:1;transform:none}}
+@keyframes draw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
+@keyframes swapin{from{opacity:0;transform:translateX(10px)}to{opacity:1;transform:none}}
+@keyframes slidenote{from{opacity:0;transform:translateX(18px)}to{opacity:1;transform:none}}
+@keyframes toastin{from{opacity:0;transform:translate(-50%,16px) scale(.96)}to{opacity:1;transform:translate(-50%,0)}}
+@keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}
+.rise{animation:rise .6s var(--ease) both}
+.swap-in{animation:swapin .4s var(--ease) both}
+
+/* page enter: cards stagger up, bars grow, line draws */
+.anim .card{animation:rise .65s var(--ease) both}
+.anim .card:nth-child(2){animation-delay:.07s}.anim .card:nth-child(3){animation-delay:.14s}.anim .card:nth-child(4){animation-delay:.21s}
+.anim .card:nth-child(5){animation-delay:.28s}.anim .card:nth-child(6){animation-delay:.35s}.anim .card:nth-child(7){animation-delay:.42s}
+.anim .row,.anim .cat,.anim .tile{animation:rise .55s var(--ease) both;animation-delay:.25s}
+.anim .row:nth-child(2),.anim .cat:nth-child(2),.anim .tile:nth-child(2){animation-delay:.31s}
+.anim .row:nth-child(3),.anim .cat:nth-child(3),.anim .tile:nth-child(3){animation-delay:.37s}
+.anim .row:nth-child(4),.anim .cat:nth-child(4),.anim .tile:nth-child(4){animation-delay:.43s}
+.anim .row:nth-child(5),.anim .cat:nth-child(5){animation-delay:.49s}
+.anim .row:nth-child(n+6),.anim .cat:nth-child(n+6){animation-delay:.55s}
+.anim .bar i,.anim .stack i,.anim .tri i,.anim .steps i.on{transform-origin:0 50%;animation:growx .9s var(--ease) .3s both}
+.anim .bar u{animation:popin .4s var(--spring) 1s both}
+.anim .tube i{transform-origin:50% 100%;animation:growy .9s var(--ease) .35s both}
+.anim .tube.o i{animation-delay:.45s}
+.anim .heat div i{transform-origin:50% 100%;animation:growy .7s var(--ease) .35s both}
+.anim .heat div{animation:popin .45s var(--spring) both}
+.anim .heat div:nth-child(7n+8){animation-delay:.1s}.anim .heat div:nth-child(7n+9){animation-delay:.14s}.anim .heat div:nth-child(7n+10){animation-delay:.18s}
+.anim .heat div:nth-child(7n+11){animation-delay:.22s}.anim .heat div:nth-child(7n+12){animation-delay:.26s}.anim .heat div:nth-child(7n+13){animation-delay:.3s}.anim .heat div:nth-child(7n+14){animation-delay:.34s}
+.anim .draw{stroke-dasharray:1;animation:draw 1.3s var(--ease) .3s both}
+.anim .fade{animation:fadein 1s ease .5s both}.anim .fade.late{animation-delay:1.2s}
+.anim .pop{transform-box:fill-box;transform-origin:center;animation:popin .5s var(--spring) 1.3s both}
+.anim .pill,.anim .big{animation:fadein .7s ease .2s both}
+/* partial refreshes */
+.anim-flow .card{animation:none}
+.anim-flow #c-flow .tube i{animation:growy .8s var(--ease) both}
+.anim-flow .row,.anim-flow .cat,.anim-flow .tile,.anim-flow .bar i,.anim-flow .stack i,.anim-flow .tri i,.anim-flow .draw,.anim-flow .fade,.anim-flow .pop,.anim-flow .heat div,.anim-flow .tube i,.anim-flow .big,.anim-flow .pill,.anim-flow .steps i.on{animation:none}
+.anim-flow #c-flow .tube i{animation:growy .8s var(--ease) both}
+.anim-note .card,.anim-note .row,.anim-note .cat,.anim-note .tile,.anim-note .bar i,.anim-note .stack i,.anim-note .tri i,.anim-note .draw,.anim-note .fade,.anim-note .pop,.anim-note .tube i,.anim-note .big,.anim-note .pill,.anim-note .steps i.on{animation:none}
+.anim-note #c-noticed .note,.anim-note #c-noticed .ico{animation:slidenote .5s var(--ease) both}
+
+/* sidebar */
+.navpill{position:absolute;left:0;top:0;border-radius:13px;background:var(--accent);pointer-events:none;box-shadow:0 6px 18px -6px var(--accent)}
+.navpill.ready{transition:transform .5s var(--ease),width .5s var(--ease),height .5s var(--ease)}
+#nav button{transition:background .2s,color .25s,transform .2s var(--ease)}
+#nav button svg{transition:transform .35s var(--spring)}
+#nav button:hover svg{transform:scale(1.18) rotate(-6deg)}
+#nav button:active{transform:scale(.96)}
+.logo{transition:transform .5s var(--spring)} .brand:hover .logo{transform:rotate(-8deg) scale(1.08)}
+.safe{transition:transform .3s var(--ease),border-color .3s} .safe:hover{transform:translateY(-2px);border-color:var(--accent)}
+
+/* interaction */
+.card{transition:transform .35s var(--ease),border-color .3s,background .3s,box-shadow .35s}
+.card:hover{transform:translateY(-3px);border-color:color-mix(in srgb,var(--accent) 35%,var(--line));box-shadow:0 18px 40px -22px rgba(0,0,0,.55)}
+.btn,.link,.x,.seg button{transition:background .2s,color .2s,border-color .2s,transform .2s var(--ease),filter .2s}
+.btn:hover:not(:disabled){transform:translateY(-1px)} .btn:active:not(:disabled){transform:scale(.95)}
+.btn.icon:hover:not(:disabled){transform:scale(1.1)}
+.x:hover{transform:scale(1.2)} .link:hover{transform:translateX(2px)}
+.row.click{transition:background .2s,transform .25s var(--ease)} .row.click:hover{transform:translateX(3px)}
+.row .ico,.ico{transition:transform .3s var(--spring)} .row:hover .ico{transform:scale(1.1) rotate(-4deg)}
+.tube i,.bar i{transition:height .6s var(--ease),width .7s var(--ease)}
+.tube:hover{border-color:var(--accent)}
+.flow .col{transition:transform .3s var(--ease)} .flow .col:hover{transform:translateY(-3px)}
+.heat div{transition:transform .25s var(--spring),border-color .2s} .heat div:hover{transform:scale(1.18);z-index:2;border-color:var(--accent)}
+.fld input,.fld select,.toolbar input,.toolbar select,.field{transition:border-color .2s,box-shadow .25s,background .2s}
+.fld input:focus,.fld select:focus,.toolbar input:focus,.toolbar select:focus,.field:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 25%,transparent)}
+tbody tr{transition:background .2s} tbody tr:hover{background:var(--glass)}
+.seg button.on{box-shadow:0 4px 12px -4px var(--accent)}
+.pill.bad,.pill.warn{animation:pulse 2.4s ease-in-out infinite}
+.monthnav span{display:inline-block}
+
+/* chart tooltip */
+#chart{position:relative}
+.charttip{position:absolute;z-index:5;pointer-events:none;white-space:nowrap;background:var(--fg);color:var(--bg);border-radius:10px;padding:6px 10px;display:flex;flex-direction:column;gap:1px;transform:translate(-50%,-100%);box-shadow:0 10px 24px -8px rgba(0,0,0,.5);animation:fadein .15s}
+.charttip small{opacity:.7;font-size:11px}.charttip b{font-weight:600}
+.xl,.xd{transition:opacity .15s}
+
+/* dialog + toast */
+dialog{opacity:0;transform:translateY(18px) scale(.96);transition:opacity .3s var(--ease),transform .4s var(--ease),overlay .3s allow-discrete,display .3s allow-discrete}
+dialog[open]{opacity:1;transform:none}
+@starting-style{dialog[open]{opacity:0;transform:translateY(18px) scale(.96)}}
+dialog::backdrop{transition:background .3s,backdrop-filter .3s,overlay .3s allow-discrete,display .3s allow-discrete;background:rgba(0,0,0,0)}
+dialog[open]::backdrop{background:rgba(0,0,0,.55)}
+@starting-style{dialog[open]::backdrop{background:rgba(0,0,0,0)}}
+#toast{animation:toastin .45s var(--spring)}
+
+/* theme crossfade */
+.theming,.theming *{transition:background-color .45s ease,color .45s ease,border-color .45s ease,fill .45s ease,stroke .45s ease!important}
+
+@media (prefers-reduced-motion:reduce){
+  *,::before,::after{animation-duration:.001ms!important;animation-delay:0s!important;transition-duration:.001ms!important}
+}
+
+/* ---- liquid glass: clear, tinted, refractive surfaces instead of solid fills ---- */
+:root{--tint:color-mix(in srgb,var(--accent) 26%,transparent);--tint-hi:color-mix(in srgb,var(--accent) 42%,transparent);
+  --spec:inset 0 1px 0 rgba(255,255,255,.45),inset 0 -1px 0 rgba(255,255,255,.08),inset 0 0 18px rgba(255,255,255,.08);
+  --glassfx:blur(18px) saturate(1.8) brightness(1.08)}
+:root[data-theme="light"]{--spec:inset 0 1px 0 rgba(255,255,255,.9),inset 0 -1px 0 rgba(255,255,255,.4),inset 0 0 18px rgba(255,255,255,.35)}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){--spec:inset 0 1px 0 rgba(255,255,255,.9),inset 0 -1px 0 rgba(255,255,255,.4),inset 0 0 18px rgba(255,255,255,.35)}}
+.btn.primary,.seg button.on,.logo,.navpill{background:linear-gradient(160deg,color-mix(in srgb,var(--accent) 38%,rgba(255,255,255,.12)),var(--tint));
+  color:var(--fg);border:1px solid rgba(255,255,255,.38);-webkit-backdrop-filter:var(--glassfx);backdrop-filter:var(--glassfx);box-shadow:var(--spec),0 8px 24px -10px var(--accent)}
+.btn.primary:hover{filter:none;background:linear-gradient(160deg,color-mix(in srgb,var(--accent) 50%,rgba(255,255,255,.16)),var(--tint-hi))}
+.navpill{box-shadow:var(--spec),0 8px 22px -10px var(--accent)}
+#nav button.on,.logo{color:var(--fg)}
+.logo svg{filter:drop-shadow(0 1px 2px rgba(0,0,0,.25))}
+.seg button.on{box-shadow:var(--spec)}
+.card,.safe,.tile,.monthnav,.btn,.hint,.banner,.seg{box-shadow:var(--spec);-webkit-backdrop-filter:blur(14px) saturate(1.5);backdrop-filter:blur(14px) saturate(1.5)}
+.btn.icon,.monthnav .btn.icon{box-shadow:none}
+.card{background:linear-gradient(155deg,rgba(255,255,255,.09),rgba(255,255,255,.03) 55%,rgba(255,255,255,.05));border-color:rgba(255,255,255,.16)}
+:root[data-theme="light"] .card{background:linear-gradient(155deg,rgba(255,255,255,.75),rgba(255,255,255,.45))}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]) .card{background:linear-gradient(155deg,rgba(255,255,255,.75),rgba(255,255,255,.45))}}
+.card:hover{box-shadow:var(--spec),0 18px 40px -22px rgba(0,0,0,.55)}
+.bar i,.tube.i i{background:linear-gradient(180deg,rgba(255,255,255,.35),var(--accent) 40%);box-shadow:inset 0 1px 0 rgba(255,255,255,.5)}
+dialog{background:color-mix(in srgb,var(--bg) 62%,transparent);-webkit-backdrop-filter:blur(30px) saturate(1.8);backdrop-filter:blur(30px) saturate(1.8);box-shadow:var(--spec),0 30px 70px -20px rgba(0,0,0,.6)}
+#toast{background:color-mix(in srgb,var(--fg) 82%,transparent);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}

@@ -25,6 +25,7 @@ def browser():
 
 
 def open_page(browser, server, path="/", **ctx):
+    ctx.setdefault("reduced_motion", "reduce")  # animations are cosmetic; keep figures final for assertions
     context = browser.new_context(**ctx)
     page = context.new_page()
     page.clock.set_fixed_time(NOW)

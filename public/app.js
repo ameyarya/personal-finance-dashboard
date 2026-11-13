@@ -25,7 +25,7 @@ const pad=n=>String(n).padStart(2,'0');
 const iso=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
 const NOW=new Date(), TODAY=iso(NOW), YM=TODAY.slice(0,7);
 const hashView=()=>{const h=location.hash.slice(1);return VIEWS.some(v=>v[0]===h)?h:'overview'};
-const S={settings:null,txRaw:[],tx:[],budgets:{},pots:[],rec:[],accounts:[],rules:[],bank:{},ready:false,db:null,month:YM,view:hashView(),span:6,noteIdx:0,note:'',confirmClear:false,confirmDisc:false,q:'',fcat:'',busy:''};
+const S={settings:null,txRaw:[],tx:[],budgets:{},pots:[],rec:[],accounts:[],rules:[],bank:{},ready:false,db:null,month:YM,view:hashView(),span:6,noteIdx:0,note:'',confirmClear:false,confirmDisc:false,q:'',fcat:'',busy:'',anim:'page'};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const cfg=()=>Object.assign({},DEF,S.settings||{});
@@ -77,14 +77,26 @@ function notices(m){
   return n;
 }
 
+/* ---------- motion helpers ---------- */
+const REDUCED=window.matchMedia&&matchMedia('(prefers-reduced-motion:reduce)');
+function restart(el,cls){if(!el)return;el.classList.remove(cls);void el.offsetWidth;el.classList.add(cls)}
+function countUp(root){if(REDUCED&&REDUCED.matches)return;
+  root.querySelectorAll('[data-n]').forEach(el=>{const to=+el.dataset.n,t0=performance.now(),D=950;if(!isFinite(to))return;
+    const f=t=>{if(!el.isConnected)return;const p=Math.min((t-t0)/D,1),e=1-Math.pow(1-p,4);el.textContent=fmt(to*e);if(p<1)requestAnimationFrame(f)};requestAnimationFrame(f)})}
+function placePill(){const p=document.querySelector('.navpill'),b=document.querySelector('#nav button.on');if(!p||!b||!b.offsetWidth)return;
+  p.style.width=b.offsetWidth+'px';p.style.height=b.offsetHeight+'px';p.style.transform='translate('+b.offsetLeft+'px,'+b.offsetTop+'px)';
+  if(!p.classList.contains('ready'))requestAnimationFrame(()=>requestAnimationFrame(()=>p.classList.add('ready')))}
+window.addEventListener('resize',placePill);if(document.fonts&&document.fonts.ready)document.fonts.ready.then(placePill);
+
 /* ---------- rendering ---------- */
 let raf=0; function schedule(){if(!raf)raf=requestAnimationFrame(()=>{raf=0;render()})}
 const themeNow=()=>{try{return localStorage.getItem('theme')||'auto'}catch(e){return 'auto'}};
 function render(){
-  derive();
+  derive(); const an=S.anim; S.anim='';
   const c=cfg(),m=monthData(S.month),hr=NOW.getHours();
   $('date').textContent=NOW.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
   $('title').textContent=c.household; $('mlabel').textContent=mName(S.month);
+  if(an==='page'){restart($('mlabel'),'swap-in');restart($('greet'),'rise');restart($('lede'),'rise')}
   $('greet').textContent=S.view==='overview'?'Good '+(hr<12?'morning':hr<17?'afternoon':'evening'):VIEWS.find(v=>v[0]===S.view)[1];
   let lede='';
   if(S.ready&&!m.cur)lede='Looking back at '+mName(S.month)+'.';
@@ -93,7 +105,10 @@ function render(){
   $('lede').textContent=lede;
   $('next').disabled=S.month>=YM; $('btn-settings').innerHTML=ic('sliders');
   const th=themeNow();$('btn-theme').innerHTML=ic(th==='light'?'sun':th==='dark'?'moon':'auto');$('btn-theme').title='Theme: '+(th==='auto'?'match this device':th);
-  $('nav').innerHTML=VIEWS.map(v=>'<button data-act="view" data-id="'+v[0]+'"'+(v[0]===S.view?' class="on" aria-current="page"':'')+'>'+ic(v[2])+'<span>'+v[1]+'</span></button>').join('');
+  const nv=$('nav');
+  if(!nv.querySelector('button'))nv.innerHTML='<i class="navpill" aria-hidden="true"></i>'+VIEWS.map(v=>'<button data-act="view" data-id="'+v[0]+'">'+ic(v[2])+'<span>'+v[1]+'</span></button>').join('');
+  nv.querySelectorAll('button').forEach(b=>{const on=b.dataset.id===S.view;b.classList.toggle('on',on);if(on)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
+  placePill();
   const cm=m.cur?m:monthData(YM);
   $('safe').innerHTML='<span>Safe to spend</span><b>'+(S.ready?fmt(cm.bal-cm.unpaidOut):'…')+'</b><span>'+(S.ready?fmt(cm.unpaidOut)+' of bills still due · '+plural(cm.N-cm.last,'day')+' left':'Loading')+'</span>';
 
@@ -117,7 +132,8 @@ function render(){
   else if(S.view==='household')h=card('',houseCard(m,c),'c-house');
   else h=card('s6',accountsCard(),'c-accounts')+card('s6',bankCard(),'c-bank')+card('',dataCard(),'c-data');
   const q=document.activeElement&&document.activeElement.id==='q'?document.activeElement.selectionStart:null;
-  $('view').innerHTML='<div class="grid">'+h+'</div>';
+  const vw=$('view');vw.className=an?'anim anim-'+an:'';vw.innerHTML='<div class="grid">'+h+'</div>';
+  if(an)countUp(vw);
   if(q!==null&&$('q')){$('q').focus();try{$('q').setSelectionRange(q,q)}catch(e){}}
   if(S.ready&&S.view==='overview')drawChart(m);
 }
@@ -132,9 +148,9 @@ function balanceCard(m){
   } else tiles=[['In',m.inc],['Out',m.out],['Kept',m.inc-m.out],['Bills paid',m.items.filter(i=>i.paid&&i.amount<0).length]];
   const end=m.fc.length?m.fc[m.fc.length-1].v:null,n=counted().length;
   return '<div class="head"><div><h2>'+(m.cur?'Joint balance':'Balance at the end of '+mLong(m.mo))+'</h2><small>'+(n?plural(n,'linked account')+(S.bank.lastSync?' · synced '+shortDate(S.bank.lastSync.slice(0,10)):''):m.cur?'Spent, by period':mName(m.mo))+'</small></div></div>'+
-   '<div class="balrow"><div><div class="big" id="balance">'+fmt(m.bal)+'</div>'+chg+'</div><div class="tiles">'+tiles.map(t=>'<div class="tile"><span>'+t[0]+'</span><b>'+(t[0]==='Bills paid'?t[1]:fmt(t[1]))+'</b></div>').join('')+'</div></div>'+
+   '<div class="balrow"><div><div class="big" id="balance" data-n="'+m.bal+'">'+fmt(m.bal)+'</div>'+chg+'</div><div class="tiles">'+tiles.map(t=>'<div class="tile"><span>'+t[0]+'</span><b'+(t[0]==='Bills paid'?'>'+t[1]:' data-n="'+t[1]+'">'+fmt(t[1]))+'</b></div>').join('')+'</div></div>'+
    '<div id="chart"></div>'+
-   '<div class="legend"><span><i class="lg-line"></i>Balance</span>'+(m.fc.length?'<span><i class="lg-dot"></i>Forecast</span><span><i class="lg-pt" style="background:var(--accent)"></i>Payday</span><span><i class="lg-pt" style="background:var(--out)"></i>Bill</span><span class="end">'+mShort(m.mo)+' '+m.N+'<b id="month-end">'+fmt(end)+'</b></span>':'')+'</div>';
+   '<div class="legend"><span><i class="lg-line"></i>Balance</span>'+(m.fc.length?'<span><i class="lg-dot"></i>Forecast</span><span><i class="lg-pt" style="background:var(--accent)"></i>Payday</span><span><i class="lg-pt" style="background:var(--out)"></i>Bill</span><span class="end">'+mShort(m.mo)+' '+m.N+'<b id="month-end" data-n="'+end+'">'+fmt(end)+'</b></span>':'')+'</div>';
 }
 function drawChart(m){
   const el=$('chart'); if(!el)return; const W=Math.max(el.clientWidth,260),H=190,pl=52,pr=12,pt=22,pb=22;
@@ -148,11 +164,20 @@ function drawChart(m){
   const a=m.actual;
   if(m.cur&&a.length){const tx=x(m.last);s+='<line x1="'+tx+'" x2="'+tx+'" y1="'+pt+'" y2="'+(H-pb)+'" stroke="var(--muted)" stroke-width="1" stroke-dasharray="3 4"/><text class="axis today" x="'+tx+'" y="12" text-anchor="'+(tx>W-60?'end':'middle')+'">Today</text>'}
   if(a.length){
-    s+='<path d="'+path(a)+' L'+x(a[a.length-1].d).toFixed(1)+' '+(H-pb)+' L'+x(a[0].d).toFixed(1)+' '+(H-pb)+' Z" fill="url(#ag)"/>';
-    s+='<path d="'+path(a)+'" fill="none" stroke="var(--accent)" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>';}
-  if(m.fc.length){s+='<path d="'+path(m.fc)+'" fill="none" stroke="var(--accent)" stroke-width="2" stroke-dasharray="1 6" stroke-linecap="round"/>';
-    m.marks.forEach(k=>{s+='<circle cx="'+x(k.d)+'" cy="'+y(k.v)+'" r="4.5" fill="'+(k.i.amount>0?'var(--accent)':'var(--out)')+'" stroke="var(--bg)" stroke-width="1.5"><title>'+esc(k.i.name)+' '+esc(fmt(k.i.amount))+' on the '+ord(k.d)+'</title></circle>'})}
-  el.innerHTML=s+'</svg>';
+    s+='<path d="'+path(a)+' L'+x(a[a.length-1].d).toFixed(1)+' '+(H-pb)+' L'+x(a[0].d).toFixed(1)+' '+(H-pb)+' Z" fill="url(#ag)" class="fade"/>';
+    s+='<path d="'+path(a)+'" fill="none" stroke="var(--accent)" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" pathLength="1" class="draw"/>';}
+  if(m.fc.length){s+='<path d="'+path(m.fc)+'" fill="none" stroke="var(--accent)" stroke-width="2" stroke-dasharray="1 6" stroke-linecap="round" class="fade late"/>';
+    m.marks.forEach(k=>{s+='<circle cx="'+x(k.d)+'" cy="'+y(k.v)+'" r="4.5" class="pop" fill="'+(k.i.amount>0?'var(--accent)':'var(--out)')+'" stroke="var(--bg)" stroke-width="1.5"><title>'+esc(k.i.name)+' '+esc(fmt(k.i.amount))+' on the '+ord(k.d)+'</title></circle>'})}
+  s+='<line class="xl" y1="'+pt+'" y2="'+(H-pb)+'" stroke="var(--muted)" stroke-width="1" opacity="0"/><rect class="xd" width="10" height="10" rx="5" fill="var(--accent)" stroke="var(--bg)" stroke-width="2" opacity="0"/>';
+  el.innerHTML=s+'</svg><div class="charttip" hidden></div>';
+  const pts=m.actual.map(p=>({p:p,f:0})).concat(m.fc.slice(1).map(p=>({p:p,f:1}))),svg=el.querySelector('svg'),tip=el.querySelector('.charttip'),xl=el.querySelector('.xl'),xd=el.querySelector('.xd');
+  const off=()=>{tip.hidden=true;xl.setAttribute('opacity',0);xd.setAttribute('opacity',0)};
+  el.onmousemove=e=>{const r=svg.getBoundingClientRect(),px=(e.clientX-r.left)*(W/r.width),d=Math.round(1+(px-pl)/(W-pl-pr)*(m.N-1));
+    let best=null;pts.forEach(q=>{if(!best||Math.abs(q.p.d-d)<Math.abs(best.p.d-d))best=q});if(!best||px<pl-10||px>W-pr+10)return off();
+    const cx=x(best.p.d),cy=y(best.p.v);xl.setAttribute('x1',cx);xl.setAttribute('x2',cx);xl.setAttribute('opacity',.5);xd.setAttribute('x',cx-5);xd.setAttribute('y',cy-5);xd.setAttribute('opacity',1);
+    tip.hidden=false;tip.innerHTML='<small>'+esc(mShort(m.mo))+' '+best.p.d+(best.f?' · forecast':'')+'</small><b>'+esc(fmt(best.p.v))+'</b>';
+    const tw=tip.offsetWidth;tip.style.left=Math.min(Math.max(cx*(r.width/W),tw/2),r.width-tw/2)+'px';tip.style.top=Math.max(cy*(r.height/H)-8,0)+'px'};
+  el.onmouseleave=off;
 }
 
 function flowCard(){
@@ -343,13 +368,13 @@ async function csvPreview(flip){
 
 const col=n=>S.db.collection(n);
 const ACT={
-  prev(){S.month=shift(S.month,-1);S.noteIdx=0;render()},
-  next(){if(S.month<YM){S.month=shift(S.month,1);S.noteIdx=0;render()}},
-  view(id){if(!VIEWS.some(v=>v[0]===id))return;S.view=id;try{history.replaceState(null,'','#'+id)}catch(e){location.hash=id}render();window.scrollTo(0,0)},
-  span(id){S.span=+id;render()},
-  note(id){S.noteIdx+=+id;render()},
+  prev(){S.month=shift(S.month,-1);S.noteIdx=0;S.anim='page';render()},
+  next(){if(S.month<YM){S.month=shift(S.month,1);S.noteIdx=0;S.anim='page';render()}},
+  view(id){if(!VIEWS.some(v=>v[0]===id))return;if(S.view!==id)S.anim='page';S.view=id;try{history.replaceState(null,'','#'+id)}catch(e){location.hash=id}render();window.scrollTo(0,0)},
+  span(id){S.span=+id;S.anim='flow';render()},
+  note(id){S.noteIdx+=+id;S.anim='note';render()},
   theme(){const order=['auto','light','dark'],next=order[(order.indexOf(themeNow())+1)%3];try{localStorage.setItem('theme',next)}catch(e){}
-    if(next==='auto')delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=next;render()},
+    if(next==='auto')delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=next;const h=document.documentElement;h.classList.add('theming');clearTimeout(h._t);h._t=setTimeout(()=>h.classList.remove('theming'),500);render()},
   'add-tx'(){openForm({title:'Add payment',submit:'Add',fields:txFields(null),onSubmit(v){const t=txFromForm(v);if(t)save(col('transactions').add(t),'Payment added')}})},
   'edit-tx'(id){const t=S.txRaw.find(x=>x.id===id);if(!t)return;
     openForm({title:'Edit payment',fields:txFields(t).concat({html:'<label class="check"><input type="checkbox" id="remember">Always use this category for payments named like this</label>'}),
@@ -407,7 +432,7 @@ document.addEventListener('change',e=>{const t=e.target;
   if(t.id==='fcat'){S.fcat=t.value;refreshTx()}
   else if(t.dataset&&t.dataset.acct)save(col('accounts').doc(t.dataset.acct).update({include:t.checked}),t.checked?'Counted in the joint balance':'Left out of the joint balance')
   else if(t.id==='csv-file'&&t.files[0]){const r=new FileReader();r.onload=()=>{csvText=String(r.result||'');csvPreview(false)};r.onerror=()=>toast('Could not read that file.');r.readAsText(t.files[0]);t.value=''}});
-window.addEventListener('hashchange',()=>{const v=hashView();if(v!==S.view){S.view=v;render()}});
+window.addEventListener('hashchange',()=>{const v=hashView();if(v!==S.view){S.view=v;S.anim='page';render()}});
 let rz=0,lastW=0;const redraw=()=>{clearTimeout(rz);rz=setTimeout(()=>{const w=$('view').clientWidth;if(S.ready&&S.view==='overview'&&w!==lastW){lastW=w;drawChart(monthData(S.month))}},120)};
 window.addEventListener('resize',redraw);if(window.ResizeObserver)new ResizeObserver(redraw).observe($('view'));
 
@@ -430,7 +455,7 @@ async function boot(){
   db.onChange(()=>{const s=db.get('settings','main');S.settings=s.exists?s.data():null;S.txRaw=db.collection('transactions').rows();S.pots=db.collection('pots').rows();S.rec=db.collection('recurring').rows();
     S.accounts=db.collection('accounts').rows();S.rules=db.collection('rules').rows();const o={};db.collection('budgets').rows().forEach(d=>o[d.id]=d);S.budgets=o;schedule()});
   let down=false;
-  async function tick(){try{await db.pull();if(!S.ready||down){S.ready=true;down=false;S.note='';schedule()}}
+  async function tick(){try{await db.pull();if(!S.ready||down){if(!S.ready)S.anim='page';S.ready=true;down=false;S.note='';schedule()}}
     catch(e){if(!down){down=true;S.ready=true;S.note='Cannot reach the finances server. Retrying.';schedule()}}}
   await tick();setInterval(tick,4000);
 }
