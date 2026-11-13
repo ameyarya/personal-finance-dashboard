@@ -10,3 +10,7 @@ __pycache__/
 .pytest_cache/
 test-results/
 .DS_Store
+
+# local rules and statement text never go into git
+*.local.json
+*.psv

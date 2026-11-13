@@ -1,0 +1,32 @@
+{
+ "rules": [
+  [
+   "MY LANDLORD|APARTMENT",
+   "Housing"
+  ],
+  [
+   "LOCAL GROCER",
+   "Groceries"
+  ]
+ ],
+ "shopping": "WALMART|TARGET",
+ "card_payment": "PAYMENT THANK YOU|AUTOPAY",
+ "cash_transfer": "CREDIT CARD|TRANSFER TO SAVINGS",
+ "income": "PAYROLL|INTEREST|TAX REFUND",
+ "cash_rules": [
+  [
+   "BROKERAGE",
+   "Savings",
+   null
+  ],
+  [
+   "ATM",
+   "Other",
+   "ATM cash withdrawal"
+  ]
+ ],
+ "who": {
+  "Person A personal": "Person A",
+  "Person B personal": "Person B"
+ }
+}

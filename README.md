@@ -1,5 +1,9 @@
 # Personal Finance Dashboard
 
+![The overview page, shown with the built-in example figures](docs/screenshot.png)
+
+The screenshot shows the made-up example data that ships with the page, not real accounts.
+
 A household money page you run on your own computer and open from any device on your home
 network. One Python file, no dependencies, no accounts, no cloud. Your figures stay in a single
 JSON file on your machine.
