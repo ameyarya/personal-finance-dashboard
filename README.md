@@ -26,7 +26,7 @@ page when you are ready to enter your own.
 - **Pots.** Savings goals you move money into.
 - **Insights.** Spending by day, needs against wants against savings, categories over six months.
 - **Household.** Who spent what.
-- **Accounts.** Optional bank link, statement import, backup.
+- **Accounts.** Which statements the figures came from, statement import, backup.
 
 Light and dark themes. Works on a phone. Ten currencies.
 
@@ -38,7 +38,6 @@ There are three ways. You can mix them.
 |---|---|---|
 | Type payments in | Per payment | As current as you are |
 | Import a CSV statement from your bank's website | A minute, whenever you like | As of the export |
-| Link your bank through SimpleFIN Bridge | Once | About once a day |
 
 **CSV import.** Download a statement as CSV from your bank, then use *Payments → Import CSV*. The
 columns are detected from their names (date, description, and either one amount column or separate
@@ -46,21 +45,12 @@ money-in and money-out columns). You see a preview before anything is saved. Imp
 file twice adds nothing. Categories are guessed from the description, and when you correct one you
 can tick a box to remember it.
 
-**Bank link.** No bank offers households a free live feed, so this uses
-[SimpleFIN Bridge](https://beta-bridge.simplefin.org/), a paid read-only service covering US and
-Canadian banks. You link your banks on their site, create a *setup token*, and paste it under
-*Accounts → Bank connection*. The server swaps it once for an access key and keeps that key in
-`data/secrets.json`, readable only by you. It never reaches the browser. Balances and payments are
-then fetched about once a day (the bridge allows roughly 24 requests a day), or when you press
-*Sync now*. Once accounts are linked, the joint balance is the sum of the accounts you tick. The
-bank code follows the published protocol and is tested against a stand-in bridge. It has not been
-run against a live bank account by the author.
+**Statements.** For a whole year at once, `tools/import_statements.py` loads card and cash-account exports in one go (run it with `--help`). It files card payments and moves between your own accounts as Transfer so nothing is counted twice, and keeps refunds as refunds.
 
 ## Where your data lives
 
 ```
 data/data.json      everything you see on the page
-data/secrets.json   the bank access key, only if you link a bank
 ```
 
 The `data/` folder is in `.gitignore`. Back up `data.json`, or use *Accounts → Download a backup*.
@@ -125,7 +115,7 @@ data folder and never touch `data/`.
 ## Layout
 
 ```
-server.py            the whole server: storage, CSV import, bank sync, static files
+server.py            the whole server: storage, CSV import, static files
 public/index.html    page shell
 public/app.css       styles and both themes
 public/app.js        the app: state, rendering, forms

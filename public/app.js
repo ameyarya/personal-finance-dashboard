@@ -2,10 +2,10 @@
    State lives in S, every page is rendered from it, and the server beside this file keeps the data. */
 (function(){
 'use strict';
-const CATS=['Housing','Groceries','Utilities','Transport','Dining','Shopping','Health','Kids','Fun','Savings','Other','Transfer'];
+const CATS=['Housing','Groceries','Utilities','Insurance','Transport','Dining','Shopping','Health','Pets','Kids','Fun','Travel','Savings','Other','Transfer'];
 const BUDGET_CATS=CATS.filter(c=>c!=='Transfer');
-const NEEDS=['Housing','Groceries','Utilities','Transport','Health','Kids'];
-const CATMETA={Housing:['home','c1'],Groceries:['bag','c2'],Utilities:['bolt','c3'],Transport:['bus','c4'],Dining:['cup','c5'],Shopping:['tag','c6'],Health:['heart','c6'],Kids:['kid','c4'],Fun:['star','c3'],Savings:['coins','c1'],Other:['dots','c0'],Transfer:['swap','c0'],Income:['down','c2']};
+const NEEDS=['Housing','Groceries','Utilities','Insurance','Transport','Health','Pets','Kids'];
+const CATMETA={Housing:['home','c1'],Groceries:['bag','c2'],Utilities:['bolt','c3'],Transport:['bus','c4'],Dining:['cup','c5'],Shopping:['tag','c6'],Health:['heart','c6'],Kids:['kid','c4'],Fun:['star','c3'],Savings:['coins','c1'],Other:['dots','c0'],Transfer:['swap','c0'],Income:['down','c2'],Insurance:['bank','c4'],Pets:['heart','c1'],Travel:['spark','c5']};
 const ICONS={grid:'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',swap:'M7 7h13M16 3l4 4-4 4M17 17H4M8 13l-4 4 4 4',cal:'M5 5h14v15H5zM5 10h14M9 3v4M15 3v4',
  pie:'M12 3a9 9 0 1 0 9 9h-9zM15 3.5A9 9 0 0 1 20.5 9H15z',jar:'M7 8h10l1 12H6zM9 4h6v4H9z',users:'M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 6.5M18 14.5a6 6 0 0 1 3.5 5.5',
  sliders:'M4 7h10M18 7h2M4 17h2M10 17h10M16 5v4M8 15v4',home:'M4 11l8-7 8 7M6 10v10h12V10',bag:'M6 8h12l-1 12H7zM9 8a3 3 0 0 1 6 0',bolt:'M13 3L5 14h6l-1 7 8-11h-6z',
@@ -25,8 +25,9 @@ const DEF={household:'Our household',currency:'USD',opening:0,members:['You','Pa
 const pad=n=>String(n).padStart(2,'0');
 const iso=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
 const NOW=new Date(), TODAY=iso(NOW), YM=TODAY.slice(0,7);
+const fyOf=()=>{const y=S.settings&&+S.settings.fiscalYear;return y?{lo:y+'-01',hi:y+'-12'}:{lo:'0000-00',hi:YM}};
 const hashView=()=>{const h=location.hash.slice(1);return VIEWS.some(v=>v[0]===h)?h:'overview'};
-const S={settings:null,txRaw:[],tx:[],budgets:{},pots:[],rec:[],accounts:[],rules:[],bank:{},ready:false,db:null,month:YM,view:hashView(),span:6,noteIdx:0,note:'',confirmClear:false,confirmDisc:false,q:'',fcat:'',busy:'',anim:'page'};
+const S={settings:null,txRaw:[],tx:[],budgets:{},pots:[],rec:[],accounts:[],rules:[],ready:false,db:null,month:YM,view:hashView(),span:6,noteIdx:0,note:'',confirmClear:false,q:'',fcat:'',anim:'page'};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const cfg=()=>Object.assign({},DEF,S.settings||{});
@@ -40,8 +41,9 @@ const shortDate=d=>new Date(d+'T12:00:00').toLocaleDateString('en-US',{month:'sh
 function fmt(n,compact){const c=cfg().currency;try{return new Intl.NumberFormat(LOCALE[c]||'en-US',{style:'currency',currency:c,maximumFractionDigits:compact?1:0,notation:compact?'compact':'standard'}).format(n)}catch(e){return Math.round(n).toLocaleString()}}
 const sum=(a,f)=>a.reduce((s,x)=>s+f(x),0);
 const flows=a=>a.filter(t=>t.category!=='Transfer');
-const outOf=a=>sum(flows(a).filter(t=>t.amount<0),t=>-t.amount);
-const incOf=a=>sum(flows(a).filter(t=>t.amount>0),t=>+t.amount);
+const isInc=t=>t.amount>0&&t.category!=='Transfer'&&!t.refund;
+const outOf=a=>sum(flows(a).filter(t=>t.amount<0),t=>-t.amount)-sum(flows(a).filter(t=>t.refund&&t.amount>0),t=>+t.amount);
+const incOf=a=>sum(flows(a).filter(isInc),t=>+t.amount);
 const plural=(n,one,many)=>n+' '+(n===1?one:(many||one+'s'));
 
 /* ---------- derived figures ---------- */
@@ -61,7 +63,7 @@ function monthData(mo){
   const unpaidOut=sum(items.filter(i=>!i.paid&&i.amount<0),i=>-i.amount);
   return {mo,N,last,cur,mtx,actual,fc,marks,items,bal,unpaidOut,inc:incOf(mtx),out:outOf(mtx)};
 }
-function spendByCat(mtx){const o={};flows(mtx).forEach(t=>{if(t.amount<0){const c=t.category||'Other';o[c]=(o[c]||0)-t.amount}});return o}
+function spendByCat(mtx){const o={};flows(mtx).forEach(t=>{if(t.amount<0||t.refund){const c=t.category||'Other';o[c]=(o[c]||0)-t.amount}});Object.keys(o).forEach(k=>{if(o[k]<=0)delete o[k]});return o}
 function notices(m){
   const n=[],prev=monthData(shift(m.mo,-1)),sp=spendByCat(m.mtx);
   if(m.cur){
@@ -104,7 +106,7 @@ function render(){
   else if(S.ready){const pay=m.items.find(i=>!i.paid&&i.amount>0&&i.due>=m.last),nb=m.items.filter(i=>!i.paid&&i.amount<0&&(!pay||i.due<=pay.due)).length;
     lede=(pay?pay.name+' lands '+(pay.due===m.last?'today':'in '+plural(pay.due-m.last,'day'))+'. ':'')+(nb?plural(nb,'bill')+(nb===1?' goes':' go')+' out '+(pay?'before then.':'before the month ends.'):pay?'No bills are due before then.':'Nothing is due for the rest of the month.')}
   $('lede').textContent=lede;
-  $('next').disabled=S.month>=YM;
+  {const b=fyOf();$('next').disabled=S.month>=b.hi;$('prev').disabled=S.month<=b.lo}
   $('ic-search').innerHTML=ic('search');$('btn-add').innerHTML=ic('plus');$('btn-send').innerHTML=ic('send');$('btn-bell').innerHTML=ic('bell');
   $('btn-settings').textContent=(c.household||'H').split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase();
   $('btn-bell').classList.toggle('has',S.ready&&notices(m).length>0);
@@ -114,7 +116,9 @@ function render(){
   nv.querySelectorAll('button').forEach(b=>{const on=b.dataset.id===S.view;b.classList.toggle('on',on);if(on)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
   placePill();
   const cm=m.cur?m:monthData(YM);
-  $('safe').innerHTML='<span>Safe to spend</span><b>'+(S.ready?fmt(cm.bal-cm.unpaidOut):'…')+'</b><span>'+(S.ready?fmt(cm.unpaidOut)+' of bills still due · '+plural(cm.N-cm.last,'day')+' left':'Loading')+'</span>';
+  if(S.ready&&S.settings&&S.settings.fiscalYear){const fy=''+S.settings.fiscalYear,yt=S.tx.filter(t=>t.date.startsWith(fy)),inv=sum(flows(yt).filter(t=>t.category==='Savings'&&t.amount<0),t=>-t.amount),spent=outOf(yt)-inv,got=incOf(yt);
+    $('safe').innerHTML='<span>FY'+fy+' left after spending</span><b>'+fmt(got-spent)+'</b><span>In '+fmt(got,true)+' · spent '+fmt(spent,true)+' · invested '+fmt(inv,true)+'</span>'}
+  else $('safe').innerHTML='<span>Safe to spend</span><b>'+(S.ready?fmt(cm.bal-cm.unpaidOut):'…')+'</b><span>'+(S.ready?fmt(cm.unpaidOut)+' of bills still due · '+plural(cm.N-cm.last,'day')+' left':'Loading')+'</span>';
 
   const nSample=S.txRaw.filter(t=>t.sample).length+S.pots.filter(p=>p.sample).length+S.rec.filter(r=>r.sample).length;
   const b=$('banner');
@@ -134,7 +138,7 @@ function render(){
   else if(S.view==='pots')h=card('',potsCard(),'c-pots');
   else if(S.view==='insights')h=card('s6',heatCard(m),'c-heat')+card('s6',splitCard(m),'c-split')+card('s7',trendCard(m),'c-trend')+card('s5',biggestCard(m),'c-biggest');
   else if(S.view==='household')h=card('',houseCard(m,c),'c-house');
-  else h=card('s6',accountsCard(),'c-accounts')+card('s6',bankCard(),'c-bank')+card('',dataCard(),'c-data');
+  else h=card('s6',sourcesCard(),'c-sources')+card('s6',dataCard(),'c-data');
   const q=document.activeElement&&document.activeElement.id==='q'?document.activeElement.selectionStart:null;
   const vw=$('view');vw.className=an?'anim anim-'+an:'';vw.innerHTML='<div class="grid">'+h+'</div>';
   if(an)countUp(vw);
@@ -151,7 +155,7 @@ function balanceCard(m){
     if(was){const p=Math.round((m.bal-was)/Math.abs(was)*100);chg='<div class="sub" style="margin-top:6px"><span class="pill '+(p>=0?'ok':'warn')+'">'+(p>=0?'↑ ':'↓ ')+Math.abs(p)+'%</span> against a month ago</div>'}
   } else tiles=[['In',m.inc],['Out',m.out],['Kept',m.inc-m.out],['Bills paid',m.items.filter(i=>i.paid&&i.amount<0).length]];
   const end=m.fc.length?m.fc[m.fc.length-1].v:null,n=counted().length;
-  return '<div class="head"><div><h2>'+(m.cur?'Joint balance':'Balance at the end of '+mLong(m.mo))+'</h2><small>'+(n?plural(n,'linked account')+(S.bank.lastSync?' · synced '+shortDate(S.bank.lastSync.slice(0,10)):''):m.cur?'Spent, by period':mName(m.mo))+'</small></div></div>'+
+  return '<div class="head"><div><h2>'+(S.settings&&S.settings.fiscalYear?'Running total at the end of '+mLong(m.mo):m.cur?'Joint balance':'Balance at the end of '+mLong(m.mo))+'</h2><small>'+(S.settings&&S.settings.fiscalYear?'Starts from the opening balance in Settings':m.cur?'Spent, by period':mName(m.mo))+'</small></div></div>'+
    '<div class="balrow"><div><div class="big" id="balance" data-n="'+m.bal+'">'+fmt(m.bal)+'</div>'+chg+'</div><div class="tiles">'+tiles.map(t=>'<div class="tile"><span>'+t[0]+'</span><b'+(t[0]==='Bills paid'?'>'+t[1]:' data-n="'+t[1]+'">'+fmt(t[1]))+'</b></div>').join('')+'</div></div>'+
    '<div id="chart"></div>'+
    '<div class="legend"><span><i class="lg-line"></i>Balance</span>'+(m.fc.length?'<span><i class="lg-dot"></i>Forecast</span><span><i class="lg-pt" style="background:var(--accent)"></i>Payday</span><span><i class="lg-pt" style="background:var(--out)"></i>Bill</span><span class="end">'+mShort(m.mo)+' '+m.N+'<b id="month-end" data-n="'+end+'">'+fmt(end)+'</b></span>':'')+'</div>';
@@ -208,13 +212,13 @@ function catsCard(m){
 }
 
 function filtered(m){const q=S.q.trim().toLowerCase();
-  return m.mtx.filter(t=>(!S.fcat||(t.amount>0&&t.category!=='Transfer'?'Income':t.category||'Other')===S.fcat)&&(!q||((t.desc||'')+' '+(t.category||'')+' '+(t.who||'')).toLowerCase().includes(q)))
+  return m.mtx.filter(t=>(!S.fcat||(isInc(t)?'Income':t.category||'Other')===S.fcat)&&(!q||((t.desc||'')+' '+(t.category||'')+' '+(t.who||'')).toLowerCase().includes(q)))
     .sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:(a.id<b.id?1:-1))}
 function txRows(list,full){
   if(!list.length)return '<div class="empty">'+(S.q||S.fcat?'No payments match.':'No payments recorded for '+mLong(S.month)+'. Use Add payment to enter the first one, or import a statement.')+'</div>';
   const acct={};S.accounts.forEach(a=>acct[a.id]=a.name);
-  return '<div class="list">'+list.map(t=>{const dd=dayDiff(TODAY,t.date),when=dd===0?'Today':dd===1?'Yesterday':shortDate(t.date),cat=t.amount>0&&t.category!=='Transfer'?'Income':(t.category||'Other');
-    return '<div class="row'+(full?' click" data-act="edit-tx" data-id="'+esc(t.id)+'" tabindex="0" role="button':'')+'">'+catIco(cat)+'<div class="t"><b>'+esc(t.desc||'Payment')+'</b><small>'+when+' · '+esc(cat)+(t.who?' · '+esc(t.who):'')+(full&&t.account&&acct[t.account]?' · '+esc(acct[t.account]):'')+'</small></div><div class="amt '+(t.amount>0?'in':'')+'">'+(t.amount>0?'+':'−')+fmt(Math.abs(t.amount))+'</div><div class="acts">'+(full?'<button class="x" data-act="del-tx" data-id="'+esc(t.id)+'" aria-label="Delete '+esc(t.desc||'payment')+'">×</button>':'')+'</div></div>'}).join('')+'</div>';
+  return '<div class="list">'+list.map(t=>{const dd=dayDiff(TODAY,t.date),when=dd===0?'Today':dd===1?'Yesterday':shortDate(t.date),cat=isInc(t)?'Income':(t.category||'Other');
+    return '<div class="row'+(full?' click" data-act="edit-tx" data-id="'+esc(t.id)+'" tabindex="0" role="button':'')+'">'+catIco(cat)+'<div class="t"><b>'+esc(t.desc||'Payment')+'</b><small>'+when+' · '+esc(cat)+(t.who?' · '+esc(t.who):'')+(full&&t.account&&acct[t.account]?' · '+esc(acct[t.account]):'')+(t.card?' · '+esc(t.card):'')+(t.refund?' · refund':'')+'</small></div><div class="amt '+(t.amount>0?'in':'')+'">'+(t.amount>0?'+':'−')+fmt(Math.abs(t.amount))+'</div><div class="acts">'+(full?'<button class="x" data-act="del-tx" data-id="'+esc(t.id)+'" aria-label="Delete '+esc(t.desc||'payment')+'">×</button>':'')+'</div></div>'}).join('')+'</div>';
 }
 function txCard(m,limit){
   if(limit){const list=m.mtx.slice().sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:0);
@@ -267,7 +271,7 @@ function budgetsCard(m){
 }
 
 function houseCard(m,c){
-  const by={},inc={};flows(m.mtx).forEach(t=>{const k=t.who||'Shared';if(t.amount<0)by[k]=(by[k]||0)-t.amount;else inc[k]=(inc[k]||0)+ +t.amount});
+  const by={},inc={};flows(m.mtx).forEach(t=>{const k=t.who||'Shared';if(t.amount<0)by[k]=(by[k]||0)-t.amount;else if(!t.refund)inc[k]=(inc[k]||0)+ +t.amount});
   const names=Array.from(new Set(c.members.concat(Object.keys(by),Object.keys(inc)))),mx=Math.max.apply(0,names.map(n=>by[n]||0))||1;
   return '<div class="head"><div><h2>Who spent what</h2><small>'+mName(m.mo)+' · Shared covers payments with no person set</small></div></div><div>'+
    names.map(n=>'<div class="cat"><div class="l"><b style="display:flex;gap:10px;align-items:center"><span class="av">'+esc(n.split(/\s+/).map(s=>s[0]).join('').slice(0,2).toUpperCase())+'</span>'+esc(n)+'</b><span>'+(inc[n]?'brought in '+fmt(inc[n])+' · ':'')+'spent '+fmt(by[n]||0)+'</span></div><div class="bar"><i style="width:'+((by[n]||0)/mx*100).toFixed(1)+'%"></i></div></div>').join('')+'</div>';
@@ -305,18 +309,13 @@ function biggestCard(m){
 }
 
 /* ---------- accounts and data ---------- */
-function accountsCard(){
-  let h='<div class="head"><div><h2>Accounts</h2><small>'+(S.accounts.length?'Ticked accounts make up the joint balance':'None linked')+'</small></div></div>';
-  if(!S.accounts.length)return h+'<div class="empty">The balance is worked out from your opening balance (in Settings) plus every payment recorded here. Link a bank to use real account balances instead.</div>';
-  return h+'<div class="list">'+S.accounts.map(a=>'<div class="row" data-acct-row="'+esc(a.id)+'"><span class="ico">'+ic('bank')+'</span><div class="t"><b>'+esc(a.name)+'</b><small>'+esc(a.org||'Bank')+' · as of '+shortDate(a.balanceDate||TODAY)+'</small></div><div class="amt">'+fmt(+a.balance||0)+'</div><label class="check"><input type="checkbox" data-acct="'+esc(a.id)+'"'+(a.include!==false?' checked':'')+' aria-label="Count '+esc(a.name)+' in the joint balance">Count</label></div>').join('')+'</div>';
-}
-function bankCard(){
-  const b=S.bank||{},errs=(b.errors||[]).map(e=>'<div class="err">'+esc(e)+'</div>').join('');
-  if(b.connected)return '<div class="head"><div><h2>Bank connection</h2><small>'+(b.lastSync?'Last synced '+new Date(b.lastSync).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'Connected')+' · refreshes about once a day</small></div><span class="pill ok">Connected</span></div>'+errs+
-    '<div class="toolbar"><button class="btn primary" data-act="bank-sync"'+(S.busy?' disabled':'')+'>'+(S.busy==='sync'?'Syncing…':'Sync now')+'</button>'+(S.confirmDisc?'<span class="sub">Stop syncing? Payments already fetched stay.</span><button class="btn" data-act="bank-disc-no">Keep</button><button class="btn" data-act="bank-disc-yes">Disconnect</button>':'<button class="btn" data-act="bank-disc-ask">Disconnect</button>')+'</div>';
-  return '<div class="head"><div><h2>Bank connection</h2><small>Optional. Fetches balances and payments about once a day.</small></div></div>'+errs+
-   '<ol class="steps-list"><li>Create an account at <a href="https://beta-bridge.simplefin.org/" target="_blank" rel="noopener">SimpleFIN Bridge</a> (a paid, read-only service for US and Canadian banks) and link your banks there.</li><li>In its settings, create a new app connection and copy the <b>setup token</b>.</li><li>Paste it here. It is exchanged once for an access key that is kept only on this server, in <code>data/secrets.json</code>.</li></ol>'+
-   '<div class="toolbar"><input class="field" style="flex:1 1 220px" id="sf-token" placeholder="Setup token" aria-label="SimpleFIN setup token" autocomplete="off"><button class="btn primary" data-act="bank-connect"'+(S.busy?' disabled':'')+'>'+(S.busy==='connect'?'Connecting…':'Connect')+'</button></div>';
+function sourcesCard(){
+  const by={};S.txRaw.forEach(t=>{const k=t.card||'Entered by hand',o=by[k]||(by[k]={n:0,out:0,inn:0,from:'9999',to:''});o.n++;if(t.category!=='Transfer'){if(t.amount<0)o.out-=t.amount;else if(isInc(t))o.inn+=t.amount}if(t.date<o.from)o.from=t.date;if(t.date>o.to)o.to=t.date});
+  const ks=Object.keys(by).sort((a,b)=>by[b].n-by[a].n);
+  const fy=S.settings&&S.settings.fiscalYear;
+  let h='<div class="head"><div><h2>Where the figures come from</h2><small>'+(fy?'Statements for FY'+fy+' · ':'')+plural(S.txRaw.length,'payment')+'</small></div></div>';
+  if(!ks.length)return h+'<div class="empty">Nothing loaded yet. Import a statement below, or run tools/import_statements.py.</div>';
+  return h+'<div class="list">'+ks.map(k=>{const o=by[k];return '<div class="row"><span class="ico">'+ic('bank')+'</span><div class="t"><b>'+esc(k)+'</b><small>'+plural(o.n,'entry','entries')+' · '+shortDate(o.from)+' to '+shortDate(o.to)+'</small></div><div class="amt">'+(o.out?'−'+fmt(o.out):'')+'</div><div class="pct">'+(o.inn?'+'+fmt(o.inn):'')+'</div></div>'}).join('')+'</div>';
 }
 function dataCard(){
   return '<div class="head"><div><h2>Your data</h2><small>Everything is kept in one file, data/data.json, on the computer running this page. Nothing is sent anywhere else.</small></div></div>'+
@@ -410,8 +409,8 @@ async function csvPreview(flip){
 const col=n=>S.db.collection(n);
 const ACT={
   palette(){openPalette()}, bell(){togglePop('bell')}, send(){togglePop('send')},
-  prev(){S.month=shift(S.month,-1);S.noteIdx=0;S.anim='page';render()},
-  next(){if(S.month<YM){S.month=shift(S.month,1);S.noteIdx=0;S.anim='page';render()}},
+  prev(){if(S.month<=fyOf().lo)return;S.month=shift(S.month,-1);S.noteIdx=0;S.anim='page';render()},
+  next(){if(S.month<fyOf().hi){S.month=shift(S.month,1);S.noteIdx=0;S.anim='page';render()}},
   view(id){if(!VIEWS.some(v=>v[0]===id))return;if(S.view!==id)S.anim='page';S.view=id;try{history.replaceState(null,'','#'+id)}catch(e){location.hash=id}render();window.scrollTo(0,0)},
   span(id){S.span=+id;S.anim='flow';render()},
   note(id){S.noteIdx+=+id;S.anim='note';render()},
@@ -444,7 +443,7 @@ const ACT={
   settings(){const c=cfg();openForm({title:'Settings',fields:[
      {id:'household',label:'Household name',value:c.household},
      {id:'currency',label:'Currency',options:Object.keys(LOCALE),value:c.currency},
-     {id:'opening',label:'Opening balance, before the first payment recorded here'+(counted().length?' (not used while bank accounts are linked)':''),type:'number',min:-1e12,value:c.opening},
+     {id:'opening',label:'Opening balance, before the first payment recorded here',type:'number',min:-1e12,value:c.opening},
      {id:'members',label:'People, separated by commas',value:c.members.join(', ')},
      {html:'<div class="eyebrow" style="margin-top:6px">Monthly budgets (leave blank for none)</div><div class="two">'+BUDGET_CATS.map(k=>'<div class="fld"><label for="b-'+k+'">'+k+'</label><input id="b-'+k+'" type="number" min="0" step="any" inputmode="decimal" value="'+(S.budgets[k]&&S.budgets[k].limit||'')+'"></div>').join('')+'</div>'}],
     async onSubmit(v){const members=v.members.split(',').map(s=>s.trim()).filter(Boolean).slice(0,8);
@@ -457,11 +456,6 @@ const ACT={
     if(S.settings&&S.settings.sample){const s=Object.assign({},S.settings,{opening:0,members:DEF.members});delete s.sample;writes.push({op:'set',col:'settings',id:'main',data:s})}
     save(S.db.batch(writes),'Examples cleared. Set your opening balance and names in Settings.')},
   'import-csv'(){const f=$('csv-file');f.value='';f.click()},
-  async 'bank-connect'(){const t=$('sf-token').value.trim();if(!t)return toast('Paste the setup token first.');S.busy='connect';render();
-    try{const r=await api('api/bank/connect',{setupToken:t});await S.db.pull();toast('Connected. '+plural(r.accounts,'account')+' and '+plural(r.added,'payment')+' fetched.')}catch(e){toast(e.message)}S.busy='';render()},
-  async 'bank-sync'(){S.busy='sync';render();try{const r=await api('api/bank/sync');await S.db.pull();toast('Synced. '+plural(r.added,'new payment')+'.')}catch(e){toast(e.message)}S.busy='';render()},
-  'bank-disc-ask'(){S.confirmDisc=true;render()},'bank-disc-no'(){S.confirmDisc=false;render()},
-  async 'bank-disc-yes'(){S.confirmDisc=false;try{await api('api/bank/disconnect');await S.db.pull();toast('Bank connection removed.')}catch(e){toast(e.message)}render()},
   rules(){const d=$('dlg');d.className='';
     d.innerHTML='<form id="dlg-form"><h2>Category rules</h2><div class="list">'+S.rules.map(r=>'<div class="row" style="grid-template-columns:minmax(0,1fr) auto auto"><div class="t"><b>'+esc(r.match)+'</b><small>filed under '+esc(r.category)+'</small></div><span></span><button type="button" class="x" data-act="del-rule" data-id="'+esc(r.id)+'" aria-label="Forget rule for '+esc(r.match)+'">×</button></div>').join('')+'</div><div class="dlg-acts"><div><button type="button" class="btn" id="dlg-cancel">Close</button></div></div></form>';
     $('dlg-cancel').onclick=()=>d.close();if(!d.open)d.showModal()},
@@ -484,7 +478,7 @@ function localDB(){
   const rid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
   const snapDoc=(c,id)=>{const d=(data[c]||{})[id];return{id,exists:!!d,data:()=>d}};
   async function pull(){const r=await fetch('api/data',{cache:'no-store'});if(!r.ok)throw{message:'The server is not answering.'};const j=await r.json();
-    if(j.version!==ver||JSON.stringify(j.bank)!==JSON.stringify(S.bank)){ver=j.version;data=j.collections||{};S.bank=j.bank||{};subs.forEach(f=>f())}}
+    if(j.version!==ver){ver=j.version;data=j.collections||{};subs.forEach(f=>f())}}
   async function req(method,path,body){let r;try{r=await fetch(path,{method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined})}catch(e){throw{message:'Cannot reach the server. Nothing was saved.'}}
     if(!r.ok)throw{message:'The server refused the change.'};await pull()}
   const docRef=(c,id)=>({id,set:b=>req('PUT','api/doc/'+c+'/'+encodeURIComponent(id),b),update:b=>req('PATCH','api/doc/'+c+'/'+encodeURIComponent(id),b),delete:()=>req('DELETE','api/doc/'+c+'/'+encodeURIComponent(id))});
@@ -497,7 +491,7 @@ async function boot(){
   db.onChange(()=>{const s=db.get('settings','main');S.settings=s.exists?s.data():null;S.txRaw=db.collection('transactions').rows();S.pots=db.collection('pots').rows();S.rec=db.collection('recurring').rows();
     S.accounts=db.collection('accounts').rows();S.rules=db.collection('rules').rows();const o={};db.collection('budgets').rows().forEach(d=>o[d.id]=d);S.budgets=o;schedule()});
   let down=false;
-  async function tick(){try{await db.pull();if(!S.ready||down){if(!S.ready)S.anim='page';S.ready=true;down=false;S.note='';schedule()}}
+  async function tick(){try{await db.pull();if(!S.ready||down){if(!S.ready){S.anim='page';const ms=S.txRaw.filter(t=>t.date).map(t=>t.date.slice(0,7)).sort();if(ms.length&&!ms.includes(S.month))S.month=ms[ms.length-1]}S.ready=true;down=false;S.note='';schedule()}}
     catch(e){if(!down){down=true;S.ready=true;S.note='Cannot reach the finances server. Retrying.';schedule()}}}
   await tick();setInterval(tick,4000);
 }

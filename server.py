@@ -8,7 +8,6 @@ Everything is stored in one JSON file under ./data. Only devices on the local
 network are answered, and other websites cannot write to it.
 """
 import argparse
-import base64
 import csv
 import datetime as dt
 import hashlib
@@ -24,9 +23,6 @@ import subprocess
 import sys
 import threading
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -118,10 +114,6 @@ def data_file():
     return CFG["data"] / "data.json"
 
 
-def secrets_file():
-    return CFG["data"] / "secrets.json"
-
-
 def load():
     CFG["data"].mkdir(parents=True, exist_ok=True)
     legacy = HERE / "data.json"
@@ -131,7 +123,6 @@ def load():
         store = json.loads(data_file().read_text("utf-8"))
     else:
         store = {"version": 0, "collections": {} if CFG["empty"] else make_sample(today())}
-    store.setdefault("bank", {})
     for name in COLLECTIONS:
         store["collections"].setdefault(name, {})
     return store
@@ -145,9 +136,7 @@ def persist():
 
 
 def public_store():
-    bank = dict(STORE.get("bank", {}))
-    bank["connected"] = secrets_file().exists()
-    return {"version": STORE["version"], "collections": STORE["collections"], "bank": bank}
+    return {"version": STORE["version"], "collections": STORE["collections"]}
 
 
 # ---------------------------------------------------------------- categories
@@ -290,113 +279,6 @@ def import_csv(text, flip, dry):
             "columns": cols, "preview": preview, "imported": 0 if dry else len(fresh)}
 
 
-# ---------------------------------------------------------------- bank sync (SimpleFIN)
-
-class BankError(Exception):
-    pass
-
-
-def bank_request(url, method="GET"):
-    parts = urllib.parse.urlsplit(url)
-    if parts.scheme != "https" and not os.environ.get("FINANCES_ALLOW_HTTP_BANK"):
-        raise BankError("The bank bridge address must use https.")
-    host = parts.hostname + (":%d" % parts.port if parts.port else "")
-    req = urllib.request.Request(urllib.parse.urlunsplit((parts.scheme, host, parts.path, parts.query, "")), method=method,
-                                 headers={"User-Agent": "personal-finance-dashboard", "Content-Length": "0"} if method == "POST" else {"User-Agent": "personal-finance-dashboard"})
-    if parts.username:
-        token = base64.b64encode(("%s:%s" % (urllib.parse.unquote(parts.username), urllib.parse.unquote(parts.password or ""))).encode()).decode()
-        req.add_header("Authorization", "Basic " + token)
-    try:
-        with urllib.request.urlopen(req, timeout=60) as res:
-            return res.read().decode("utf-8")
-    except urllib.error.HTTPError as e:
-        if e.code == 403:
-            raise BankError("The bridge refused the request (403). The token may already have been used or access was revoked. Create a new setup token.")
-        if e.code == 402:
-            raise BankError("The bridge says payment is required (402). Check your SimpleFIN subscription.")
-        raise BankError("The bridge answered with error %d." % e.code)
-    except (urllib.error.URLError, OSError) as e:
-        raise BankError("Could not reach the bridge: %s" % getattr(e, "reason", e))
-
-
-def bank_connect(setup_token):
-    try:
-        claim = base64.b64decode(setup_token.strip() + "=" * (-len(setup_token.strip()) % 4)).decode("utf-8").strip()
-    except Exception:
-        raise BankError("That does not look like a SimpleFIN setup token.")
-    if not re.match(r"^https?://", claim):
-        raise BankError("That does not look like a SimpleFIN setup token.")
-    access = bank_request(claim, "POST").strip()
-    if not re.match(r"^https?://", access):
-        raise BankError("The bridge did not return an access address.")
-    secrets_file().write_text(json.dumps({"accessUrl": access, "connectedAt": dt.datetime.now().isoformat(timespec="seconds")}), "utf-8")
-    os.chmod(secrets_file(), 0o600)
-    return bank_sync(first=True)
-
-
-def bank_sync(first=False):
-    if not secrets_file().exists():
-        raise BankError("No bank connection is set up.")
-    access = json.loads(secrets_file().read_text("utf-8"))["accessUrl"].rstrip("/")
-    with lock:
-        last = STORE.get("bank", {}).get("lastSyncEpoch")
-    now = int(time.time())
-    start = now - 85 * 86400 if first or not last else max(last - 5 * 86400, now - 85 * 86400)
-    payload = json.loads(bank_request("%s/accounts?version=2&start-date=%d" % (access, start)))
-    conns = {c.get("conn_id"): c.get("name") or c.get("org_name") for c in payload.get("connections", [])}
-    errors = [e.get("msg", "") for e in payload.get("errlist", []) if isinstance(e, dict)] or [str(e) for e in payload.get("errors", [])]
-    added = 0
-    with lock:
-        accounts, txs = STORE["collections"]["accounts"], STORE["collections"]["transactions"]
-        for acct in payload.get("accounts", []):
-            aid = "sf-" + slug(acct.get("id", ""))
-            org = conns.get(acct.get("conn_id")) or (acct.get("org") or {}).get("name") or ""
-            old = accounts.get(aid, {})
-            accounts[aid] = {"name": acct.get("name", "Account"), "org": org, "currency": acct.get("currency", ""),
-                             "balance": float(acct.get("balance", 0) or 0),
-                             "balanceDate": dt.date.fromtimestamp(int(acct.get("balance-date", now) or now)).isoformat(),
-                             "source": "simplefin", "include": old.get("include", True)}
-            for t in acct.get("transactions", []) or []:
-                stamp = int(t.get("transacted_at") or t.get("posted") or 0)
-                if t.get("pending") or not stamp:
-                    continue
-                tid = "sf-%s-%s" % (slug(acct.get("id", ""), 40), slug(t.get("id", ""), 80))
-                amount, desc = round(float(t.get("amount", 0) or 0), 2), (t.get("description") or "Payment").strip()
-                date = dt.date.fromtimestamp(stamp).isoformat()
-                if tid in txs:
-                    txs[tid].update({"date": date, "amount": amount})
-                else:
-                    txs[tid] = {"date": date, "desc": desc, "amount": amount, "category": categorize(desc, amount),
-                                "who": "", "account": aid, "source": "simplefin"}
-                    added += 1
-        STORE["bank"] = {"lastSync": dt.datetime.now().isoformat(timespec="seconds"), "lastSyncEpoch": now, "errors": errors[:10]}
-        persist()
-    return {"accounts": len(payload.get("accounts", [])), "added": added, "errors": errors[:10]}
-
-
-def bank_disconnect():
-    if secrets_file().exists():
-        secrets_file().unlink()
-    with lock:
-        STORE["bank"] = {}
-        persist()
-
-
-def auto_sync():
-    """Refresh from the bank about once a day. The bridge allows roughly 24 requests a day."""
-    while True:
-        time.sleep(1800 + random.randint(0, 600))
-        try:
-            with lock:
-                last = STORE.get("bank", {}).get("lastSyncEpoch", 0)
-            if secrets_file().exists() and time.time() - last > 20 * 3600:
-                bank_sync()
-        except Exception as e:  # keep the loop alive; the next attempt may succeed
-            with lock:
-                STORE.setdefault("bank", {})["errors"] = [str(e)]
-                persist()
-
-
 # ---------------------------------------------------------------- HTTP
 
 class Handler(BaseHTTPRequestHandler):
@@ -493,21 +375,8 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(body.get("text"), str) or not body["text"].strip():
                     return self.send_json(400, {"error": "The file is empty."})
                 return self.send_json(200, import_csv(body["text"], bool(body.get("flip")), bool(body.get("dry"))))
-            if parts == ["api", "bank", "connect"]:
-                return self.send_json(200, bank_connect(str(body.get("setupToken", ""))))
-            if parts == ["api", "bank", "sync"]:
-                with lock:
-                    last = STORE.get("bank", {}).get("lastSyncEpoch", 0)
-                if time.time() - last < 60:
-                    return self.send_json(429, {"error": "Synced less than a minute ago. The bridge limits how often it can be asked."})
-                return self.send_json(200, bank_sync())
-            if parts == ["api", "bank", "disconnect"]:
-                bank_disconnect()
-                return self.send_json(200, {"ok": True})
         except ValueError as e:
             return self.send_json(400, {"error": str(e)})
-        except BankError as e:
-            return self.send_json(502, {"error": str(e)})
         self.send_json(404, {"error": "not found"})
 
     def batch(self, body):
@@ -617,7 +486,6 @@ def main():
             persist()
     if args.name:
         threading.Thread(target=advertise, args=(args.name, args.port), daemon=True).start()
-    threading.Thread(target=auto_sync, daemon=True).start()
     print("serving on http://%s:%d/  data in %s" % ("localhost" if args.bind in ("0.0.0.0", "127.0.0.1") else args.bind, args.port, CFG["data"]), flush=True)
     try:
         ThreadingHTTPServer((args.bind, args.port), Handler).serve_forever()

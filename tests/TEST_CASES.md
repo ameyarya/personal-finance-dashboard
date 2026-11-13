@@ -13,7 +13,7 @@ What they come to do:
 5. **Save towards things.** Keep pots and move money into them. (Pots)
 6. **Understand.** See patterns: which days, which categories, needs against wants. (Insights)
 7. **Share fairly.** See who spent what. (Household)
-8. **Use real numbers.** Link a bank, choose which accounts count, export or back up. (Accounts)
+8. **Use real numbers.** See where the figures came from, export or back up. (Accounts)
 9. **Make it theirs.** Name, currency, people, theme, and clearing the example data. (Settings)
 
 Every case below is automated. `UI` cases are in `tests/test_ui.py` (the test name starts with the
@@ -94,9 +94,6 @@ pinned to Thursday 12 November 2026, so the example figures are the same on ever
 
 | Id | Flow | Expected |
 |---|---|---|
-| BANK01 | Paste a setup token and connect | Accounts are listed with their bank. The balance becomes the sum of account balances. Fetched payments show their account and a guessed category. |
-| BANK02 | Untick an account | Its balance and payments leave the totals. |
-| BANK03 | Empty token, bad token, sync too soon, disconnect | Each gets a plain message. Disconnect asks first and deletes the stored key. |
 | DATA01 | Download a backup | Downloads `finance-backup.json`. |
 
 ## Resilience
@@ -121,13 +118,9 @@ pinned to Thursday 12 November 2026, so the example figures are the same on ever
 | `test_csv_*` | Statement parsing: single amount column, separate in and out columns, reversed signs, parentheses, unreadable rows, duplicates, missing header. |
 | `test_remembered_rule_wins_on_import` | A remembered category beats the built-in guess. |
 | `test_export_and_backup` | CSV export and JSON backup contents. |
-| `test_bank_connect_sync_and_secret_stays_on_server` | Token exchange, account and payment import, pending items skipped, the access key never returned to the browser and stored owner-only, rate limit, disconnect. |
-| `test_bank_edits_survive_a_resync` | Your category and person edits are kept when the bank is synced again. |
-| `test_bank_bad_or_used_token` | Bad and already-used tokens are explained. |
 
 ## Not covered
 
-- A real bank bridge. Bank tests use a stand-in that follows the published SimpleFIN protocol.
 - Announcing the `.local` name on the network (it needs a real network and other devices).
 - Browsers other than Chromium.
 - The look of the page. Tests check content and behaviour, not pixels.

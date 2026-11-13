@@ -482,54 +482,7 @@ def test_SET03_clearing_examples_keeps_your_own_entries(page, server):
     assert [t["desc"] for t in server.docs("transactions").values()] == ["My real payment"]
 
 
-# ---------------------------------------------------------------- accounts and bank
-
-def test_BANK01_connect_a_bank_and_use_real_balances(blank, empty_server, bank):
-    go(blank, "accounts")
-    expect(blank.locator("#c-accounts")).to_contain_text("None linked")
-    blank.fill("#sf-token", bank.setup_token)
-    blank.click('[data-act="bank-connect"]')
-    expect(blank.locator("#toast")).to_contain_text("Connected. 2 accounts and 3 payments fetched.")
-    expect(blank.locator("#c-bank .pill.ok")).to_have_text("Connected")
-    expect(blank.locator("[data-acct-row]")).to_have_count(2)
-    expect(blank.locator("#c-accounts")).to_contain_text("Example Credit Union")
-    go(blank, "overview")
-    expect(blank.locator("#balance")).to_have_text("$4,880")
-    expect(blank.locator("#c-balance")).to_contain_text("2 linked accounts")
-    go(blank, "payments")
-    expect(blank.locator("#tx-list .row", has_text="CHIPOTLE 0456")).to_contain_text("Dining · Rewards Card")
-
-
-def test_BANK02_leave_an_account_out_of_the_balance(blank, empty_server, bank):
-    empty_server.call("POST", "/api/bank/connect", {"setupToken": bank.setup_token})
-    blank.reload()
-    go(blank, "accounts")
-    blank.locator("[data-acct-row]", has_text="Rewards Card").locator("input").uncheck()
-    expect(blank.locator("#toast")).to_contain_text("Left out of the joint balance")
-    go(blank, "overview")
-    expect(blank.locator("#balance")).to_have_text("$5,200")
-    go(blank, "payments")
-    expect(blank.locator("#tx-list .row", has_text="CHIPOTLE")).to_have_count(0)
-
-
-def test_BANK03_bad_token_and_disconnect(blank, empty_server, bank):
-    go(blank, "accounts")
-    blank.click('[data-act="bank-connect"]')
-    expect(blank.locator("#toast")).to_contain_text("Paste the setup token first")
-    blank.fill("#sf-token", "garbage")
-    blank.click('[data-act="bank-connect"]')
-    expect(blank.locator("#toast")).to_contain_text("does not look like a SimpleFIN setup token")
-    blank.fill("#sf-token", bank.setup_token)
-    blank.click('[data-act="bank-connect"]')
-    expect(blank.locator("#c-bank .pill.ok")).to_be_visible()
-    blank.click('[data-act="bank-sync"]')
-    expect(blank.locator("#toast")).to_contain_text("less than a minute ago")
-    blank.click('[data-act="bank-disc-ask"]')
-    blank.click('[data-act="bank-disc-yes"]')
-    expect(blank.locator("#toast")).to_contain_text("Bank connection removed")
-    expect(blank.locator("#sf-token")).to_be_visible()
-    assert not (empty_server.data_dir / "secrets.json").exists()
-
+# ---------------------------------------------------------------- data
 
 def test_DATA01_backup_download(page):
     go(page, "accounts")

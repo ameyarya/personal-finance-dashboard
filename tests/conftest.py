@@ -1,9 +1,8 @@
-"""Shared fixtures: a throwaway server per test, and a stand-in bank bridge.
+"""Shared fixtures: a throwaway server per test.
 
 Nothing here touches the real ./data folder. Each test gets its own temporary data folder
 and its own port, with the date pinned to TODAY so the example figures are predictable.
 """
-import base64
 import json
 import os
 import socket
@@ -13,7 +12,6 @@ import threading
 import time
 import urllib.error
 import urllib.request
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -37,7 +35,7 @@ class Server:
         self.proc = None
 
     def start(self):
-        env = dict(os.environ, FINANCES_TODAY=TODAY, FINANCES_ALLOW_HTTP_BANK="1")
+        env = dict(os.environ, FINANCES_TODAY=TODAY)
         self.proc = subprocess.Popen(
             [sys.executable, str(ROOT / "server.py"), "--port", str(self.port), "--bind", "127.0.0.1",
              "--name", "", "--data", str(self.data_dir), "--quiet", *self.extra],
@@ -97,62 +95,3 @@ def empty_server(tmp_path):
     s.stop()
 
 
-class Bank:
-    """A minimal SimpleFIN bridge: one claim address, then an accounts address behind basic auth."""
-    USER, PASSWORD = "demo-user", "s3cret-pass"
-
-    def __init__(self):
-        bank = self
-        self.claims = 0
-        self.requests = []
-
-        class H(BaseHTTPRequestHandler):
-            def log_message(self, *a):
-                pass
-
-            def reply(self, code, body, ctype="application/json"):
-                raw = body.encode()
-                self.send_response(code)
-                self.send_header("Content-Type", ctype)
-                self.send_header("Content-Length", str(len(raw)))
-                self.end_headers()
-                self.wfile.write(raw)
-
-            def do_POST(self):
-                if self.path == "/claim/ONE-TIME" and bank.claims == 0:
-                    bank.claims += 1
-                    return self.reply(200, "http://%s:%s@127.0.0.1:%d/simplefin" % (bank.USER, bank.PASSWORD, bank.port), "text/plain")
-                self.reply(403, "claimed")
-
-            def do_GET(self):
-                want = "Basic " + base64.b64encode(("%s:%s" % (bank.USER, bank.PASSWORD)).encode()).decode()
-                if not self.path.startswith("/simplefin/accounts") or self.headers.get("Authorization") != want:
-                    return self.reply(403, "{}")
-                bank.requests.append(self.path)
-                day = 1794268800  # 2026-11-10 00:00 UTC
-                self.reply(200, json.dumps({
-                    "errlist": [], "connections": [{"conn_id": "c1", "name": "Example Credit Union", "org_id": "ecu", "sfin_url": "x"}],
-                    "accounts": [
-                        {"id": "ACT-checking 1", "name": "Joint Checking", "conn_id": "c1", "currency": "USD", "balance": "5200.40",
-                         "balance-date": day + 86400, "transactions": [
-                             {"id": "t1", "posted": day + 43200, "amount": "-54.20", "description": "WHOLE FOODS MARKET #123"},
-                             {"id": "t2", "posted": day + 43200, "amount": "2400.00", "description": "ACME CORP PAYROLL"},
-                             {"id": "t3", "posted": 0, "amount": "-9.99", "description": "PENDING THING", "pending": True}]},
-                        {"id": "ACT-card", "name": "Rewards Card", "conn_id": "c1", "currency": "USD", "balance": "-320.25",
-                         "balance-date": day + 86400, "transactions": [
-                             {"id": "t1", "posted": day + 43200, "amount": "-18.75", "description": "CHIPOTLE 0456"}]}]}))
-
-        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), H)
-        self.port = self.httpd.server_address[1]
-        self.setup_token = base64.b64encode(("http://127.0.0.1:%d/claim/ONE-TIME" % self.port).encode()).decode()
-        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
-
-    def close(self):
-        self.httpd.shutdown()
-
-
-@pytest.fixture
-def bank():
-    b = Bank()
-    yield b
-    b.close()
