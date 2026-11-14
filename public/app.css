@@ -443,3 +443,5 @@ code{font:12px ui-monospace,Menlo,monospace;background:var(--glass2);border-radi
 .pick{display:flex;gap:8px}.pick input{flex:1;min-width:0}
 
 .rowctl{display:flex;gap:6px;margin-top:5px;flex-wrap:wrap}.rowctl select.rs{font-size:13px;width:auto;max-width:100%;background-color:var(--glass);border:1px solid var(--line);border-radius:10px;padding-top:5px;padding-bottom:5px;padding-left:11px;transition:border-color .2s,box-shadow .25s}.rowctl select.rs:hover{border-color:var(--accent)}.rowctl select.rs:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 25%,transparent)}.rowctl select.rs option{background:var(--bg,#fff);color:inherit}
+
+.more{display:flex;justify-content:center;padding:14px 0 4px}

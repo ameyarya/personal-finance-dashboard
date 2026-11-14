@@ -31,7 +31,7 @@ const fromStatements=()=>!!(S.settings&&S.settings.fiscalYear)||S.txRaw.some(t=>
 const fyOf=()=>{if(!fromStatements()||!S.tx.length)return {lo:'0000-00',hi:YM};const ms=S.tx.filter(t=>t.date).map(t=>t.date.slice(0,7)).sort();return {lo:ms[0],hi:ms[ms.length-1]}};
 const openDate=()=>(S.settings&&S.settings.openingDate)||'';
 const hashView=()=>{const h=location.hash.slice(1);return VIEWS.some(v=>v[0]===h)?h:'overview'};
-const S={session:{},sync:{},period:'month',cardIdx:0,flip:false,settings:null,txRaw:[],tx:[],budgets:{},rec:[],rules:[],ready:false,db:null,month:YM,view:hashView(),span:6,noteIdx:0,note:'',confirmClear:false,q:'',fcat:'',anim:'page'};
+const S={session:{},sync:{},period:'month',cardIdx:0,flip:false,settings:null,txRaw:[],tx:[],budgets:{},rec:[],rules:[],ready:false,db:null,month:YM,view:hashView(),span:6,noteIdx:0,txMax:100,note:'',confirmClear:false,q:'',fcat:'',anim:'page'};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const cfg=()=>Object.assign({},DEF,S.settings||{});
@@ -241,8 +241,9 @@ function rowPickers(t,cat){
   return '<div class="rowctl">'+sel('category',cats,cat,'Category')+sel('who',people,who||'Shared','Person')+'</div>'}
 function txRows(list,full){
   if(!list.length)return '<div class="empty">'+(S.q||S.fcat?'No transactions match.':'No transactions recorded for '+mLong(curMo())+'. Use Add transaction to enter the first one, or sync your statements.')+'</div>';
+  const all=list,more=full&&list.length>S.txMax?list.length-S.txMax:0;if(more)list=list.slice(0,S.txMax);
   return '<div class="list">'+list.map(t=>{const dd=dayDiff(TODAY,t.date),when=dd===0?'Today':dd===1?'Yesterday':shortDate(t.date),cat=isInc(t)?'Income':(t.category||'Other');
-    return '<div class="row'+(full?' click" data-act="edit-tx" data-id="'+esc(t.id)+'" tabindex="0" role="button':'')+'">'+catIco(cat)+'<div class="t"><b>'+esc(t.desc||'Transaction')+'</b><small>'+when+(full?'':' · '+esc(cat)+(t.who?' · '+esc(t.who):''))+(t.card?' · '+esc(t.card):'')+(t.refund?' · refund':'')+(t.note?' · '+esc(t.note):'')+'</small>'+(full?rowPickers(t,cat):'')+'</div><div class="amt '+(t.amount>0?'in':'')+'">'+(t.amount>0?'+':'−')+fmt(Math.abs(t.amount))+'</div><div class="acts">'+(full?'<button class="x" data-act="del-tx" data-id="'+esc(t.id)+'" aria-label="Delete '+esc(t.desc||'transaction')+'">×</button>':'')+'</div></div>'}).join('')+'</div>';
+    return '<div class="row'+(full?' click" data-act="edit-tx" data-id="'+esc(t.id)+'" tabindex="0" role="button':'')+'">'+catIco(cat)+'<div class="t"><b>'+esc(t.desc||'Transaction')+'</b><small>'+when+(full?'':' · '+esc(cat)+(t.who?' · '+esc(t.who):''))+(t.card?' · '+esc(t.card):'')+(t.refund?' · refund':'')+(t.note?' · '+esc(t.note):'')+'</small>'+(full?rowPickers(t,cat):'')+'</div><div class="amt '+(t.amount>0?'in':'')+'">'+(t.amount>0?'+':'−')+fmt(Math.abs(t.amount))+'</div><div class="acts">'+(full?'<button class="x" data-act="del-tx" data-id="'+esc(t.id)+'" aria-label="Delete '+esc(t.desc||'transaction')+'">×</button>':'')+'</div></div>'}).join('')+'</div>'+(more?'<div class="more"><button class="btn" data-act="more-tx">Show '+Math.min(more,100)+' more <small>('+more+' hidden)</small></button></div>':'');
 }
 function txCard(m,limit){
   if(limit){const list=m.mtx.slice().sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:0);
@@ -588,10 +589,11 @@ const ACT={
   cflip(){S.flip=!S.flip;cardsRefresh()},
   cnext(id){const n=cardList(monthData(curMo())).length||1;S.cardIdx=(((S.cardIdx+ +id)%n)+n)%n;S.flip=false;cardsRefresh()},
   palette(){openPalette()}, bell(){togglePop('bell')},
-  prev(){const b=fyOf();if(S.period==='year'){if(S.month.slice(0,4)<=b.lo.slice(0,4))return;S.month=shift(S.month,-12)}else{if(S.month<=b.lo)return;S.month=shift(S.month,-1)}S.noteIdx=0;S.anim='page';savePrefs();render()},
-  next(){const b=fyOf();if(S.period==='year'){if(S.month.slice(0,4)>=b.hi.slice(0,4))return;S.month=shift(S.month,12)}else{if(S.month>=b.hi)return;S.month=shift(S.month,1)}S.noteIdx=0;S.anim='page';savePrefs();render()},
-  period(id){if(S.period===id)return;S.period=id==='year'?'year':'month';S.q=S.q;S.noteIdx=0;S.anim='page';savePrefs();render()},
-  view(id){if(!VIEWS.some(v=>v[0]===id))return;if(S.view!==id)S.anim='page';S.view=id;try{history.replaceState(null,'','#'+id)}catch(e){location.hash=id}render();window.scrollTo(0,0)},
+  prev(){const b=fyOf();if(S.period==='year'){if(S.month.slice(0,4)<=b.lo.slice(0,4))return;S.month=shift(S.month,-12)}else{if(S.month<=b.lo)return;S.month=shift(S.month,-1)}S.txMax=100;S.noteIdx=0;S.anim='page';savePrefs();render()},
+  next(){const b=fyOf();if(S.period==='year'){if(S.month.slice(0,4)>=b.hi.slice(0,4))return;S.month=shift(S.month,12)}else{if(S.month>=b.hi)return;S.month=shift(S.month,1)}S.txMax=100;S.noteIdx=0;S.anim='page';savePrefs();render()},
+  'more-tx'(){S.txMax+=100;refreshTx()},
+  period(id){if(S.period===id)return;S.period=id==='year'?'year':'month';S.q=S.q;S.txMax=100;S.noteIdx=0;S.anim='page';savePrefs();render()},
+  view(id){if(!VIEWS.some(v=>v[0]===id))return;S.txMax=100;if(S.view!==id)S.anim='page';S.view=id;try{history.replaceState(null,'','#'+id)}catch(e){location.hash=id}render();window.scrollTo(0,0)},
   span(id){S.span=+id;S.anim='flow';render()},
   note(id){S.noteIdx+=+id;S.anim='note';render()},
   theme(){const next=themeNow()==='dark'?'light':'dark';try{localStorage.setItem('theme',next)}catch(e){}
@@ -635,7 +637,7 @@ const ACT={
 };
 document.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('.rowctl'))return;if(swipeBlockedClick()&&e.target.closest('#cstack')){e.preventDefault();e.stopPropagation();return}const b=e.target.closest('[data-act]');if(!b||b.disabled)return;const a=b.dataset.act;if(ACT[a])ACT[a](b.dataset.id)});
 document.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target.matches&&e.target.matches('.row.click,.vcard')){e.preventDefault();const a=e.target.dataset.act;if(ACT[a])ACT[a](e.target.dataset.id)}});
-document.addEventListener('input',e=>{if(e.target.id==='lim'){$('lim-out').textContent=+e.target.value?fmt(+e.target.value):'None set'}if(e.target.id==='q'){S.q=e.target.value;refreshTx()}});
+document.addEventListener('input',e=>{if(e.target.id==='lim'){$('lim-out').textContent=+e.target.value?fmt(+e.target.value):'None set'}if(e.target.id==='q'){S.q=e.target.value;S.txMax=100;refreshTx()}});
 document.addEventListener('change',e=>{const t=e.target;
   if(t.id==='cowner'){const meta=Object.assign({},(S.settings&&S.settings.cardMeta)||{});meta[t.dataset.card]=Object.assign({},meta[t.dataset.card],{owner:t.value});save(patchSettings({cardMeta:meta}),'Owner saved');return}
   if(t.id==='lim'){const lim=Object.assign({},(S.settings&&S.settings.cardLimits)||{});lim[t.dataset.card]=+t.value;save(patchSettings({cardLimits:lim}));return}
@@ -643,7 +645,7 @@ document.addEventListener('change',e=>{const t=e.target;
     const p=t.dataset.f==='who'?{who:t.value==='Shared'?'':t.value}:{category:t.value};
     if(t.dataset.f==='category'&&t.value==='Income'&&tx.amount<0)p.amount=Math.abs(tx.amount);
     save(col('transactions').doc(tx.id).update(p),t.dataset.f==='who'?'Person saved':'Category saved');return}
-  if(t.id==='fcat'){S.fcat=t.value;refreshTx()}});
+  if(t.id==='fcat'){S.fcat=t.value;S.txMax=100;refreshTx()}});
 window.addEventListener('hashchange',()=>{const v=hashView();if(v!==S.view){S.view=v;S.anim='page';render()}});
 let rz=0,lastW=0;const redraw=()=>{clearTimeout(rz);rz=setTimeout(()=>{const w=$('view').clientWidth;if(S.ready&&S.view==='overview'&&w!==lastW){lastW=w;drawChart(monthData(curMo()))}},120)};
 window.addEventListener('resize',redraw);if(window.ResizeObserver)new ResizeObserver(redraw).observe($('view'));

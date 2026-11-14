@@ -386,3 +386,22 @@ def test_M30_a_dropdown_for_a_row_that_was_deleted_meanwhile_does_nothing(page, 
     server.call("DELETE", "/api/doc/transactions/" + tid)
     page.evaluate("document.querySelector('#tx-list select[data-f=category]').dispatchEvent(new Event('change',{bubbles:true}))")
     page.keyboard.press("Tab")
+
+
+def test_M31_a_long_list_shows_100_rows_then_more_on_request(blank, empty_server):
+    empty_server.call("PUT", "/api/doc/settings/main", {"household": "H", "currency": "USD", "opening": 0, "members": ["Amy", "Bo"], "fiscalYear": 2025})
+    for i in range(230):
+        empty_server.call("PUT", "/api/doc/transactions/L%03d" % i, {"date": "2025-01-%02d" % (1 + i % 28), "desc": "Item %03d" % i, "amount": -1, "category": "Dining", "who": ""})
+    blank.reload()
+    go(blank, "overview")
+    blank.click('#period [data-id="year"]')
+    go(blank, "payments")
+    expect(blank.locator("#tx-count")).to_contain_text("230 entries")
+    expect(blank.locator("#tx-list .row")).to_have_count(100)
+    blank.click('[data-act="more-tx"]')
+    expect(blank.locator("#tx-list .row")).to_have_count(200)
+    blank.click('[data-act="more-tx"]')
+    expect(blank.locator("#tx-list .row")).to_have_count(230)
+    expect(blank.locator('[data-act="more-tx"]')).to_have_count(0)
+    blank.fill("#q", "Item 00")                       # a new search starts from the top again
+    expect(blank.locator("#tx-list .row")).to_have_count(10)
