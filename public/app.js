@@ -127,7 +127,7 @@ function render(){
   if(S.ready&&S.view==='cards'){const cs=cardList(m);lede=cs.length?plural(cs.length,'card')+' · '+fmt(sum(cs,c=>c.spent))+' spent on '+(cs.length===1?'it':'them')+' in '+mLong(m.mo):'No cards found in the statements yet.'}
   $('lede').textContent=lede;
   {const b=fyOf(),y=S.period==='year';$('next').disabled=y?S.month.slice(0,4)>=b.hi.slice(0,4):S.month>=b.hi;$('prev').disabled=y?S.month.slice(0,4)<=b.lo.slice(0,4):S.month<=b.lo}
-  $('ic-search').innerHTML=ic('search');$('btn-add').innerHTML=ic('plus');$('btn-bell').innerHTML=ic('bell');$('btn-sync').innerHTML=ic('refresh');$('btn-sync').classList.toggle('spin',!!(S.sync&&S.sync.running));
+  $('ic-search').innerHTML=ic('search');$('btn-bell').innerHTML=ic('bell');$('btn-sync').innerHTML=ic('refresh');$('btn-sync').classList.toggle('spin',!!(S.sync&&S.sync.running));
   if(SL.was&&!(S.sync&&S.sync.running)&&!SL.open)toast(S.sync.message||'Sync finished');SL.was=!!(S.sync&&S.sync.running);
   {const who=(S.session&&S.session.user)||c.household||'H';$('btn-account').textContent=who.split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase();$('btn-account').title=(S.session&&S.session.user?S.session.user+' · ':'')+c.household;}
   $('btn-bell').classList.toggle('has',S.ready&&notices(m).length>0);

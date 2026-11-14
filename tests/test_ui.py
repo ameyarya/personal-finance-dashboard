@@ -54,8 +54,15 @@ def go(page, view):
         page.locator('#more-sheet button[data-id="%s"]' % view).click()
 
 
+def open_add(page):
+    """The top bar has no plus button any more: Add transaction is in the search palette (Ctrl or Cmd + K)."""
+    page.keyboard.press("Control+k")
+    page.fill("#pal-q", "Add transaction")
+    page.keyboard.press("Enter")
+
+
 def add_payment(page, desc, amount, category="Groceries", direction="Money out", who=None):
-    page.click("#btn-add")
+    open_add(page)
     page.fill("#f-desc", desc)
     page.fill("#f-amount", str(amount))
     page.select_option("#f-dir", direction)
@@ -204,7 +211,7 @@ def test_PAY02_add_money_in(page, server):
 
 def test_PAY03_amount_is_required(page, server):
     count = len(server.docs("transactions"))
-    page.click("#btn-add")
+    open_add(page)
     page.fill("#f-desc", "No amount")
     page.click("#dlg-ok")
     expect(page.locator("#dlg")).to_be_visible()
@@ -384,7 +391,8 @@ def test_SET01_household_name_currency_and_people(page):
     page.click("#dlg-ok")
     expect(page.locator("#title")).to_have_text("The Parkers")
     expect(page.locator("#balance")).to_contain_text("€")
-    page.click("#btn-add")
+    open_add(page)
+    expect(page.locator("#f-who")).to_be_visible()
     assert page.locator("#f-who option").all_inner_texts() == ["Shared", "Jo", "Max", "Kit"]
 
 
@@ -450,7 +458,7 @@ def test_NET02_server_going_away_is_reported_and_recovers(page, server):
     server.stop()
     page.clock.run_for(5000)
     expect(page.locator("#banner")).to_contain_text("Cannot reach the finances server", timeout=10000)
-    page.click("#btn-add")
+    open_add(page)
     page.fill("#f-desc", "Offline")
     page.fill("#f-amount", "1")
     page.click("#dlg-ok")
@@ -571,7 +579,7 @@ def test_SELECT01_every_dropdown_has_the_same_arrow_and_inset(page):
         return [c.appearance, c.backgroundImage.startsWith('url'), c.backgroundPosition, c.backgroundRepeat, parseFloat(c.paddingRight)] })"""
     go(page, "payments")
     seen = page.evaluate(checks)
-    page.click("#btn-add")
+    open_add(page)
     seen += page.evaluate(checks)
     page.click("#dlg-cancel")
     assert len(seen) >= 4
