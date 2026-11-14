@@ -77,6 +77,15 @@ PDFs are read on this computer. Wells Fargo cards, Bank of America accounts, Wea
 Capital One year-end summaries have their own readers; other card statements go through a general one. Files
 that are not understood are listed on the page, never guessed at.
 
+### Data check
+
+The **Data check** page answers "is everything here, and is it right?". Each statement prints an opening and a closing
+balance; the check adds the transactions read from it to the opening balance and compares the result with the closing
+balance. It also lays each account out month by month and names the months with no statement, balances that do not carry
+over from one statement to the next, files that could not be read, and accounts whose newest statement is old. The
+Overview shows a notice until everything is complete. It is built during a sync, so use *Sync now* with a full re-read
+once after updating. Statements that do not print both balances are marked "not cross-checked".
+
 ## HTTPS
 
 Pass a certificate and key and the page is served over https on the same port:

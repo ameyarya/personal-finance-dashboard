@@ -502,6 +502,7 @@ def run_sync(force=False):
         members = (STORE["collections"]["settings"].get("main") or {}).get("members") or []
         with lock:
             seen_files = STORE["sync"].setdefault("files", {})
+            ledger = STORE["sync"].setdefault("ledger", {})
             SYNC.update(phase="Reading statements", done=0, total=len(files))
         slog("Found %d statement PDF%s" % (len(files), "" if len(files) == 1 else "s"))
         parsed, pending = [], {}      # parsed: one list of rows per PDF
@@ -513,20 +514,33 @@ def run_sync(force=False):
             sig = "%d-%d|%s-%s" % (f.stat().st_size, int(f.stat().st_mtime), window[0], window[1])      # a new year range means read it again
             person, label = describe_path(files_root(f, folders), f, members)
             name = "%s/%s" % (label, f.name)
-            if seen_files.get(str(f)) == sig and not force:
+            if seen_files.get(str(f)) == sig and not force and str(f) in ledger:
                 slog("[%d/%d] %s: unchanged, skipped" % (i, len(files), name))
                 continue
             slog("[%d/%d] Reading %s" % (i, len(files), name))
+            entry = {"file": f.name, "label": label, "person": person}
             try:
-                rows = statements.parse_pdf(f, label)
+                got = statements.read_pdf(f, label)
             except Exception as e:  # a damaged or protected file must not stop the rest
                 status["unreadable"].append("%s (%s)" % (f.name, str(e)[:60]))
                 slog("    could not read it: %s" % str(e)[:100], "error")
+                ledger[str(f)] = dict(entry, state="unreadable", reason=str(e)[:60])
                 continue
+            rows = got[0] if got else None
             if rows is None:
                 status["unreadable"].append("%s (layout not recognised)" % f.name)
                 slog("    layout not recognised, left alone", "warn")
+                ledger[str(f)] = dict(entry, state="unreadable", reason="layout not recognised")
             else:
+                meta = got[1]
+                state, diff = statements.check_statement(rows, meta)
+                if meta["kind"] == "payments":
+                    state = "ignored"
+                ledger[str(f)] = dict(entry, state=state, diff=diff, count=len(rows), start=meta["start"] or (min(r["date"] for r in rows) if rows else None),
+                                      end=meta["end"] or (max(r["date"] for r in rows) if rows else None),
+                                      opening=meta["opening"], closing=meta["closing"])
+                if state == "mismatch":
+                    slog("    does not add up: the statement says %.2f, the transactions come to %.2f" % (meta["closing"], meta["closing"] - diff), "warn")
                 for r in rows:
                     if person:
                         r["who"] = person
@@ -542,6 +556,9 @@ def run_sync(force=False):
         added, skipped, dupes = add_statement_rows(parsed, window)
         with lock:
             seen_files.update(pending)
+            here = {str(f) for f in files}
+            for gone in [k for k in ledger if k not in here]:          # a statement that was deleted no longer counts
+                del ledger[gone]
         slog("%d new, %d already in the dashboard%s" % (added, dupes, (", %d outside the years you chose ignored" % skipped) if skipped else ""), "ok")
         status.update(added=added, pdfs=len(files))
         status["message"] = "%d new transaction%s from %d statement%s%s." % (added, "" if added == 1 else "s", len(files), "" if len(files) == 1 else "s",
@@ -675,6 +692,12 @@ class Handler(BaseHTTPRequestHandler):
         if parts == ["api", "data"]:
             with lock:
                 return self.send_json(200, public_store())
+        if parts == ["api", "check"]:
+            with lock:
+                ledger = dict(STORE["sync"].get("ledger") or {})
+            out = statements.audit(ledger, today().isoformat())
+            out["checked"] = bool(ledger)
+            return self.send_json(200, out)
         if parts == ["api", "sync", "log"]:
             q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             try:

@@ -50,7 +50,10 @@ def row(date, desc, amount, card, cash=False):
 
 # ---------------------------------------------------------------- Wells Fargo card
 
-WF_ROW = re.compile(r"(\d{4}) (\d\d)/(\d\d) (\d\d)/(\d\d) ([A-Z0-9]{8,}) (.+?) (%s)(?= \d{4} \d\d/\d\d \d\d/\d\d |$| TOTAL| Fees| NOTICE| Continued)" % NUM)
+WF_ROW = re.compile(r"(\d{4}) (\d\d)/(\d\d) (\d\d)/(\d\d) ([A-Z0-9]{8,}) (.+?) (%s)(?= \d{4} \d\d/\d\d \d\d/\d\d |$| TOTAL| Fees| NOTICE| Continued| Detach)" % NUM)
+
+
+WF_PAYMENT = re.compile(r"(?<!\d )(\d\d)/(\d\d) (\d\d)/(\d\d) ([A-Z0-9]{8,}) (.+?) (%s)(?= TOTAL PAYMENTS)" % NUM)
 
 
 def parse_wells_fargo(text):
@@ -71,6 +74,8 @@ def parse_wells_fargo(text):
         amount = money(r.group(8))
         desc = r.group(7)
         out.append(row(with_year(int(r.group(2)), int(r.group(3)), end), desc, amount if kind == "credit" else -amount, card))
+    for r in WF_PAYMENT.finditer(text):                    # payments carry no card digits in front, so the row pattern above misses them
+        out.append(row(with_year(int(r.group(1)), int(r.group(2)), end), r.group(6), money(r.group(7)), card))
     return out
 
 
@@ -101,8 +106,13 @@ def parse_wealthfront(text):
     if "Wealthfront" not in text or "Account Activity" not in text:
         return None
     out, card = [], "Wealthfront Cash"
+    text = re.sub(r"(\d{1,2}/\d{1,2}/\d{3}) (\d) ", r"\1\2 ", text)           # the PDF sometimes splits a year: "10/14/202 5"
     for r in re.finditer(r"(\d{1,2})/(\d{1,2})/(\d{4}) (\w+ \d{4}) \$(%s)" % NUM, text[text.find("INTEREST"):] if "INTEREST" in text else ""):
         out.append(row(iso(int(r.group(3)), int(r.group(1)), int(r.group(2))), "%s interest" % r.group(4).split()[0], money(r.group(5)), card, cash=True))
+    for r in re.finditer(r"(\d{1,2})/(\d{1,2})/(\d{4}) (ACH|End of day transfer (?:from|to) Green Dot|RTP/FedNow)\d? (Received|Disbursed) -?\$(%s)" % NUM, text):
+        sign = 1 if r.group(5) == "Received" else -1                              # money in or out of the account, not the moves between its partner banks
+        name = "Green Dot" if "Green Dot" in r.group(4) else r.group(4)
+        out.append(row(iso(int(r.group(3)), int(r.group(1)), int(r.group(2))), "%s transfer %s" % (name, "in" if sign > 0 else "out"), sign * money(r.group(6)), card, cash=True))
     for r in re.finditer(r"(\d{1,2})/(\d{1,2})/(\d{2,4})? ?-- -- Transfer out -- -- -\$(%s)" % NUM, text):
         y = int(r.group(3)) if r.group(3) and len(r.group(3)) == 4 else None
         if y:
@@ -168,7 +178,7 @@ def parse_amex(text):
     out = []
     for r in AMEX_ROW.finditer(text):
         desc = r.group(4)
-        if len(desc) < 4 or desc[0] in ",(" or re.search(r"late fee|%|variable|may have|minimum|payment due|balance|limit|account ending|card ending|customer care|closing date|posting date|indicates", desc, re.I) or not re.search(r"[A-Za-z]{3}", desc):
+        if len(desc) < 4 or desc[0] in ",(" or re.search(r"late fee|%|variable|may have|minimum|payment due|(?<!credit )balance|limit|account ending|card ending|customer care|closing date|posting date|indicates", desc, re.I) or not re.search(r"[A-Za-z]{3}", desc):
             continue
         value = money(r.group(5))
         if value == 0:
@@ -221,6 +231,8 @@ def parse_chase_checking(text):
     end = dt.date(int(period.group(6)), MONTHS[period.group(4)[:3]], int(period.group(5)))
     body = text[text.find("TRANSACTION DETAIL"):]
     body = (body[:body.find("Ending Balance")] if "Ending Balance" in body else body).rstrip()
+    body = re.sub(r"\d+ ?\d*Page of .*?DESCRIPTION AMOUNT BALANCE", " ", body)
+    body = re.sub(r"\s+", " ", body)          # the page break in the middle of the list
     out = []
     for r in CHASE_ROW.finditer(body):
         desc = re.sub(r"\s+(?:PPD|CTX|WEB)? ?ID: ?\d+| Web ID: \d+", "", r.group(3))
@@ -257,7 +269,7 @@ def parse_discover(text):
     return out
 
 
-CHASE_CARD_ROW = re.compile(r"(?<![\d/])(\d\d)/(\d\d) (.+?) (-?%s)(?= \d\d/\d\d | [A-Z][A-Z ]{7,}|\s*$)" % NUM)
+CHASE_CARD_ROW = re.compile(r"(?<![\d/])(\d\d)/(\d\d) (.+?) (-?%s)(?= \d\d/\d\d | [A-Z][A-Z ]{7,}|\s*$)" % r"(?:[\d,]+)?\.\d\d")
 
 
 def parse_chase_card(text):
@@ -313,3 +325,176 @@ def finish(rows):
 
 def parse_pdf(path, hint=""):
     return parse_text(extract_text(path), hint)
+
+
+# ---------------------------------------------------------------- what the statement says about itself
+
+AMT = r"(-?\$?-?[\d,]+\.\d\d)"
+MONTH_NAMES = "January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec"
+LONG_DATE = r"((?:%s)[a-z]* \d{1,2}, \d{4})" % MONTH_NAMES
+OPENING = re.compile(r"(?:Previous|Beginning|Starting|Opening) Balance(?: on %s)?:? %s" % (LONG_DATE, AMT), re.I)
+CLOSING = re.compile(r"(?:New|Ending|Closing) Balance(?: on %s)?:? ?=? ?%s" % (LONG_DATE, AMT), re.I)
+PERIODS = (
+    re.compile(r"OPEN TO CLOSE DATE:? (\d\d/\d\d/\d{2,4}) - (\d\d/\d\d/\d{2,4})", re.I),
+    re.compile(r"%s (?:-|through|to) %s" % (LONG_DATE, LONG_DATE)),
+    re.compile(r"Statement Period (\d\d/\d\d/\d{2,4}) (?:to|-|through) (\d\d/\d\d/\d{2,4})", re.I),
+    re.compile(r"Opening/Closing Date (\d\d/\d\d/\d{2,4}) - (\d\d/\d\d/\d{2,4})", re.I),
+    re.compile(r"Billing Period:? (\d\d/\d\d/\d{2,4}) (?:to|-|through) (\d\d/\d\d/\d{2,4})", re.I),
+    re.compile(r"Statement Period:? (\d\d/\d\d/\d{2,4}) (?:to|-|through) (\d\d/\d\d/\d{2,4})", re.I),
+)
+
+
+def to_iso(s):
+    """'03/18/2025', '01/14/24' or 'January 31, 2025' as 2025-03-18; '' when it is none of those."""
+    m = re.fullmatch(r"(\d\d)/(\d\d)/(\d{2,4})", s.strip())
+    if m:
+        y = int(m.group(3))
+        return iso(y + 2000 if y < 100 else y, int(m.group(1)), int(m.group(2)))
+    m = re.fullmatch(r"([A-Za-z]+) (\d{1,2}), (\d{4})", s.strip())
+    if m:
+        for i, name in enumerate(("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"), 1):
+            if m.group(1).lower().startswith(name):
+                return iso(int(m.group(3)), i, int(m.group(2)))
+    return ""
+
+
+def signed(text):
+    """'$76.58CR' and 'CR$76.58' are a credit balance, so negative."""
+    return -money(re.sub(r"[A-Za-z ]", "", text)) if "CR" in text else money(text)
+
+
+AMEX_OPENING = re.compile(r"Account Summary Previous Balance Payments/Credits New Charges Fees Interest Charged (CR ?\$[\d,]+\.\d\d|\$[\d,]+\.\d\d)")
+AMEX_CLOSING = re.compile(r"New Balance (CR ?\$[\d,]+\.\d\d|\$[\d,]+\.\d\d(?:CR)?)")
+
+
+def statement_meta(text):
+    """What the statement prints about itself: {start, end, opening, closing}. A key is None when the layout does not show it."""
+    meta = {"start": None, "end": None, "opening": None, "closing": None}
+    m = OPENING.search(text)
+    if m:
+        meta["opening"] = money(m.group(2).replace("$", ""))
+        meta["start"] = to_iso(m.group(1) or "") or None
+    m = CLOSING.search(text)
+    if m:
+        meta["closing"] = money(m.group(2).replace("$", ""))
+        meta["end"] = to_iso(m.group(1) or "") or None
+    m = AMEX_OPENING.search(text)
+    if m:
+        meta["opening"] = signed(m.group(1))
+        m = AMEX_CLOSING.search(text)
+        meta["closing"] = signed(m.group(1)) if m else None
+    for p in PERIODS:
+        m = p.search(text)
+        if m:
+            meta["start"], meta["end"] = to_iso(m.group(1)) or meta["start"], to_iso(m.group(2)) or meta["end"]
+            break
+    else:
+        m = re.search(r"Closing Date (\d\d/\d\d/\d{2,4})", text) or re.search(r"%s Ending Balance" % LONG_DATE, text)
+        if m and not meta["end"]:
+            meta["end"] = to_iso(m.group(1)) or None
+    return meta
+
+
+def read_pdf(path, hint=""):
+    """(rows, meta) for one statement, or None when no parser recognises it. meta also says kind: 'statement' or 'payments'."""
+    text = extract_text(path)
+    rows = parse_text(text, hint)
+    if rows is None:
+        return None
+    meta = statement_meta(text)
+    meta["kind"] = "payments" if parse_payment_history(text) is not None else "statement"
+    return rows, meta
+
+
+# ---------------------------------------------------------------- checking the figures
+
+def check_statement(rows, meta):
+    """(state, difference): does the opening balance plus what we read equal the closing balance the statement prints?
+    state is 'ok', 'mismatch' or 'unverified' (the statement does not print both balances). difference is closing minus what we expected."""
+    if meta.get("opening") is None or meta.get("closing") is None:
+        return "unverified", None
+    net = sum(r["amount"] for r in rows)
+    expected = meta["opening"] + net if any(r.get("cash") for r in rows) else meta["opening"] - net   # a card balance grows with spending
+    diff = round(meta["closing"] - expected, 2)
+    return ("ok" if abs(diff) < 0.015 else "mismatch"), diff
+
+
+def _days(a, b):
+    return (dt.date.fromisoformat(b) - dt.date.fromisoformat(a)).days
+
+
+def _add_days(d, n):
+    return (dt.date.fromisoformat(d) + dt.timedelta(days=n)).isoformat()
+
+
+def audit(entries, today):
+    """What is missing or does not add up. entries: {path: {person, label, file, state, diff, start, end, opening, closing, reason}}.
+    Returns {complete, counts, accounts: [{name, person, first, last, cells: [{mo, state}], issues: [...]}], problems: [...]}."""
+    groups, problems, counts = {}, [], {"statements": 0, "ok": 0, "unverified": 0, "mismatch": 0, "missing": 0, "unreadable": 0, "ignored": 0}
+    for e in entries.values():
+        if e.get("state") == "ignored":
+            counts["ignored"] += 1
+        elif e.get("state") == "unreadable":
+            counts["unreadable"] += 1
+            problems.append({"kind": "unreadable", "account": e.get("label", ""), "text": "%s could not be read (%s)." % (e.get("file", "A file"), e.get("reason", "unknown reason"))})
+        else:
+            groups.setdefault((e.get("person") or "", re.sub(r"[^a-z0-9]", "", (e.get("label") or "").lower())), []).append(e)      # "CapitalOne" and "Capital One" are one account
+    firsts = [min(x["end"] for x in g if x.get("end"))[:7] for g in groups.values() if any(x.get("end") for x in g)]
+    earliest = min(firsts) if firsts else ""
+    accounts = []
+    for (person, _), g in sorted(groups.items()):
+        label = g[0].get("label") or ""
+        dated = sorted((x for x in g if x.get("end")), key=lambda x: x["end"])
+        counts["statements"] += len(g)
+        issues, cells = [], {}
+        for x in g:
+            counts[x["state"]] = counts.get(x["state"], 0) + 1
+        for x in g:
+            if x["state"] == "mismatch":
+                issues.append({"kind": "mismatch", "text": "The statement ending %s says %s but the transactions read from it come to %s%s." % (
+                    x.get("end") or "(date unknown)", "$%.2f" % x["closing"], "$%.2f" % (x["closing"] - x["diff"]), " (a $%.2f difference)" % abs(x["diff"]))})
+        if len(dated) < len(g):
+            issues.append({"kind": "nodate", "text": "%d statement%s have no readable date, so they are not placed on the timeline." % (len(g) - len(dated), "" if len(g) - len(dated) == 1 else "s")})
+        for x in dated:
+            if x.get("start") and _days(x["start"], x["end"]) > 45:       # a "last 12 months" export covers every month it spans
+                mo = x["start"][:7]
+                while mo < x["end"][:7]:
+                    cells[mo] = x["state"]
+                    y, m = int(mo[:4]), int(mo[5:]) + 1
+                    mo = "%04d-%02d" % (y + (m > 12), (m - 1) % 12 + 1)
+        for x in dated:
+            mo = x["end"][:7]
+            worst = ("mismatch", "unverified", "ok")                        # a month with two statements shows the worse of the two
+            cells[mo] = min(filter(None, (cells.get(mo), x["state"])), key=worst.index)
+        prev = None
+        for x in dated:
+            if prev:
+                days = _days(prev["end"], x["end"])
+                gap = []
+                if days > 45:                                                  # statements are about a month apart; a shifting closing day never makes 45
+                    mo = prev["end"][:7]
+                    while True:
+                        y, m = int(mo[:4]), int(mo[5:]) + 1
+                        mo = "%04d-%02d" % (y + (m > 12), (m - 1) % 12 + 1)
+                        if mo >= x["end"][:7]:
+                            break
+                        if mo not in cells:
+                            gap.append(mo)
+                if gap:
+                    for mo in gap:
+                        cells[mo] = "missing"
+                    counts["missing"] += len(gap)
+                    issues.append({"kind": "missing", "months": gap, "text": "No statement for %s (between the ones ending %s and %s)." % (", ".join(gap), prev["end"], x["end"])})
+                elif prev.get("closing") is not None and x.get("opening") is not None and abs(prev["closing"] - x["opening"]) > 0.015:
+                    counts["missing"] += 1
+                    issues.append({"kind": "chain", "text": "The balance jumps from $%.2f (statement ending %s) to $%.2f (statement ending %s). A statement between them may be missing." % (prev["closing"], prev["end"], x["opening"], x["end"])})
+            prev = x
+        if dated and _days(dated[-1]["end"], today) > 62:
+            issues.append({"kind": "stale", "text": "The newest statement ends %s, %d days ago. Newer ones may be missing." % (dated[-1]["end"], _days(dated[-1]["end"], today))})
+        if dated and earliest and dated[0]["end"][:7] > _add_days(earliest + "-15", 45)[:7]:
+            issues.append({"kind": "late", "text": "Statements begin with %s. Anything before that is not in the dashboard." % dated[0]["end"][:7]})
+        accounts.append({"name": label, "person": person, "first": dated[0]["end"][:7] if dated else "", "last": dated[-1]["end"][:7] if dated else "",
+                         "cells": [{"mo": mo, "state": cells[mo]} for mo in sorted(cells)], "issues": issues})
+    broken = ("missing", "chain", "mismatch", "stale", "nodate")          # "late" is a note: the account may simply be newer
+    complete = bool(accounts) and not counts["unreadable"] and not any(i["kind"] in broken for a in accounts for i in a["issues"])
+    return {"complete": complete, "counts": counts, "accounts": accounts, "problems": problems}

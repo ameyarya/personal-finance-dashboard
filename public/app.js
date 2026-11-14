@@ -6,7 +6,7 @@ const CATS=['Housing','Groceries','Utilities','Insurance','Transport','Dining','
 const BUDGET_CATS=CATS.filter(c=>c!=='Transfer');
 const NEEDS=['Housing','Groceries','Utilities','Insurance','Transport','Health','Pets','Kids'];
 const CATMETA={Housing:['home','c1'],Groceries:['bag','c2'],Utilities:['bolt','c3'],Transport:['bus','c4'],Dining:['cup','c5'],Shopping:['tag','c6'],Health:['heart','c6'],Kids:['kid','c4'],Fun:['star','c3'],Savings:['coins','c1'],Other:['dots','c0'],Transfer:['swap','c0'],Income:['down','c2'],Insurance:['bank','c4'],Pets:['heart','c1'],Travel:['spark','c5']};
-const ICONS={grid:'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',swap:'M7 7h13M16 3l4 4-4 4M17 17H4M8 13l-4 4 4 4',cal:'M5 5h14v15H5zM5 10h14M9 3v4M15 3v4',
+const ICONS={shield:'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM8.5 12l2.5 2.5 4.5-5',grid:'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',swap:'M7 7h13M16 3l4 4-4 4M17 17H4M8 13l-4 4 4 4',cal:'M5 5h14v15H5zM5 10h14M9 3v4M15 3v4',
  pie:'M12 3a9 9 0 1 0 9 9h-9zM15 3.5A9 9 0 0 1 20.5 9H15z',jar:'M7 8h10l1 12H6zM9 4h6v4H9z',users:'M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 6.5M18 14.5a6 6 0 0 1 3.5 5.5',
  sliders:'M4 7h10M18 7h2M4 17h2M10 17h10M16 5v4M8 15v4',home:'M4 11l8-7 8 7M6 10v10h12V10',bag:'M6 8h12l-1 12H7zM9 8a3 3 0 0 1 6 0',bolt:'M13 3L5 14h6l-1 7 8-11h-6z',
  bus:'M6 4h12v13H6zM6 12h12M8 20v-3M16 20v-3',cup:'M5 8h11v5a5.5 5.5 0 0 1-11 0zM16 9h2a2 2 0 0 1 0 5h-2M8 3v2M12 3v2',tag:'M4 4h8l8 8-8 8-8-8zM8.5 8.5h.01',
@@ -21,7 +21,7 @@ const ICONS={grid:'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',swap:'M7 
 const ic=(n,col)=>'<svg class="ic" viewBox="0 0 24 24"'+(col?' style="color:var(--'+col+')"':'')+' aria-hidden="true"><path d="'+(ICONS[n]||ICONS.dots)+'"/></svg>';
 const catIco=(c,col)=>{const m=CATMETA[c]||CATMETA.Other;return '<span class="ico">'+ic(m[0],col||m[1])+'</span>'};
 const MAIN_TABS=4;
-const VIEWS=[['overview','Overview','grid'],['cards','Cards','card'],['payments','Transactions','swap'],['bills','Bills','cal'],['budgets','Budgets','pie'],['insights','Insights','chart'],['household','Household','users'],['accounts','Accounts','bank']];
+const VIEWS=[['overview','Overview','grid'],['cards','Cards','card'],['payments','Transactions','swap'],['bills','Bills','cal'],['budgets','Budgets','pie'],['insights','Insights','chart'],['household','Household','users'],['check','Data check','shield'],['accounts','Accounts','bank']];
 const LOCALE={USD:'en-US',EUR:'en-IE',GBP:'en-GB',CAD:'en-CA',AUD:'en-AU',INR:'en-IN',SGD:'en-SG',AED:'en-AE',JPY:'ja-JP',MXN:'es-MX'};
 const DEF={household:'Our household',currency:'USD',opening:0,members:['You','Partner']};
 const pad=n=>String(n).padStart(2,'0');
@@ -31,7 +31,7 @@ const fromStatements=()=>!!(S.settings&&S.settings.fiscalYear)||S.txRaw.some(t=>
 const fyOf=()=>{if(!fromStatements()||!S.tx.length)return {lo:'0000-00',hi:YM};const ms=S.tx.filter(t=>t.date).map(t=>t.date.slice(0,7)).sort();return {lo:ms[0],hi:ms[ms.length-1]}};
 const openDate=()=>(S.settings&&S.settings.openingDate)||'';
 const hashView=()=>{const h=location.hash.slice(1);return VIEWS.some(v=>v[0]===h)?h:'overview'};
-const S={session:{},sync:{},period:'month',cardIdx:0,flip:false,settings:null,txRaw:[],tx:[],budgets:{},rec:[],rules:[],ready:false,db:null,month:YM,view:hashView(),span:6,noteIdx:0,txMax:100,note:'',confirmClear:false,q:'',fcat:'',anim:'page'};
+const S={session:{},sync:{},period:'month',cardIdx:0,flip:false,settings:null,txRaw:[],tx:[],budgets:{},rec:[],rules:[],ready:false,db:null,month:YM,view:hashView(),span:6,noteIdx:0,txMax:100,check:null,checkAt:0,note:'',confirmClear:false,q:'',fcat:'',anim:'page'};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const cfg=()=>Object.assign({},DEF,S.settings||{});
@@ -93,6 +93,7 @@ function notices(m){
   }
   Object.keys(S.budgets).forEach(k=>{const l=(S.budgets[k].limit||0)*mult;if(l&&sp[k]>l)n.push({i:(CATMETA[k]||CATMETA.Other)[0],t:esc(k)+' is over budget',b:fmt(sp[k])+' spent against a budget of '+fmt(l)+', over by '+fmt(sp[k]-l)+'.',v:'budgets',a:'See budgets'})});
   const un=m.mtx.filter(t=>t.amount<0&&(t.category||'Other')==='Other').length;
+  if(S.check&&S.check.checked&&!S.check.complete)n.push({i:'shield',t:'Your statements are not complete',b:'Some months are missing or a statement does not add up. The Data check page lists exactly which.',v:'check',a:'See data check'});
   if(un>=5)n.push({i:'tag',t:plural(un,'transaction')+' with no category',b:'Open a transaction to pick a category. Tick the box to remember it for next time.',v:'payments',a:'See transactions'});
   return n;
 }
@@ -158,6 +159,7 @@ function render(){
   else if(S.view==='budgets')h=card('',budgetsCard(m),'c-budgets');
   else if(S.view==='insights')h=card('s6',heatCard(m),'c-heat')+card('s6',splitCard(m),'c-split')+card('s7',trendCard(m),'c-trend')+card('s5',biggestCard(m),'c-biggest');
   else if(S.view==='household')h=card('',houseCard(m,c),'c-house');
+  else if(S.view==='check')h=card('',checkCard(),'c-check');
   else h=card('s6',sourcesCard(),'c-sources')+card('s6',syncCard(),'c-sync')+card('',dataCard(),'c-data');
   const q=document.activeElement&&document.activeElement.id==='q'?document.activeElement.selectionStart:null;
   const vw=$('view');vw.className=an?'anim anim-'+an:'';vw.innerHTML='<div class="grid">'+h+'</div>';
@@ -255,6 +257,32 @@ function txCard(m,limit){
    '<div id="tx-list">'+txRows(list,true)+'</div>';
 }
 function refreshTx(){if(!$('tx-list'))return;const m=monthData(curMo()),list=filtered(m);$('tx-list').innerHTML=txRows(list,true);$('tx-count').textContent=plural(list.length,'entry','entries')+' · in '+fmt(incOf(list))+' · out '+fmt(outOf(list))}
+
+
+/* ---------- data check: is every statement here, and does each one add up? ---------- */
+const CHK_LABEL={ok:'Matches the statement',unverified:'Statement does not print both balances, so it could not be cross-checked',mismatch:'Does not add up',missing:'No statement'};
+function checkCard(){
+  const k=S.check,head=(t,s)=>'<div class="head"><div><h2>'+t+'</h2>'+(s?'<small>'+s+'</small>':'')+'</div></div>';
+  if(!k)return head('Data check','Loading')+'<div class="empty">Checking your statements…</div>';
+  if(!k.checked)return head('Data check','Not run yet')+'<div class="empty">Nothing has been checked yet. Open Accounts, press Sync now and choose a full re-read: each statement is then compared with the balances it prints.</div>';
+  const c=k.counts,bad=c.missing+c.mismatch+c.unreadable+k.accounts.reduce((n,a)=>n+a.issues.filter(i=>['stale','nodate'].includes(i.kind)).length,0);
+  let h=head('Data check',k.complete?'Every statement is here and every balance adds up':plural(bad||1,'thing')+' to look at');
+  h+='<div class="hint" style="margin-top:0">'+ic(k.complete?'shield':'info','accent')+'<span>'+(k.complete?'<b>Complete.</b> No months are missing between your statements and each statement\'s opening balance plus its transactions equals the closing balance it prints.'
+    :'<b>Not complete yet.</b> The items below are gaps or figures that do not match. Add the missing statements to the folder and sync again.')+'</span></div>';
+  h+='<div class="chk-tiles" style="margin:12px 0">'+[['Statements',c.statements],['Add up',c.ok],['Not cross-checked',c.unverified],['Do not add up',c.mismatch],['Months missing',c.missing],['Unreadable',c.unreadable]].map(t=>'<div class="tile"><small>'+t[0]+'</small><b>'+t[1]+'</b></div>').join('')+'</div>';
+  const items=k.problems.map(p=>'<b>'+esc(p.account)+'</b> — '+esc(p.text)).concat(k.accounts.flatMap(a=>a.issues.filter(i=>i.kind!=='late').map(i=>'<b>'+esc(a.name)+(a.person?' · '+esc(a.person):'')+'</b> — '+esc(i.text))));
+  if(items.length)h+='<h3 style="margin:14px 0 6px">What needs attention</h3><div class="list">'+items.map(t=>'<div class="row"><div class="t"><small style="color:var(--text)">'+t+'</small></div></div>').join('')+'</div>';
+  h+='<h3 style="margin:16px 0 6px">Month by month</h3>';
+  h+=k.accounts.map(a=>'<div class="chk"><div class="chk-h"><b>'+esc(a.name)+'</b>'+(a.person?' <small>'+esc(a.person)+'</small>':'')+'<small> · '+esc(a.first)+' to '+esc(a.last)+'</small></div><div class="chk-g">'+
+    a.cells.map(x=>'<span class="cell '+x.state+'" title="'+esc(x.mo+': '+(CHK_LABEL[x.state]||x.state))+'" aria-label="'+esc(x.mo+': '+(CHK_LABEL[x.state]||x.state))+'">'+x.mo.slice(5)+'</span>').join('')+'</div>'+
+    a.issues.filter(i=>i.kind==='late').map(i=>'<div class="chk-n">'+esc(i.text)+'</div>').join('')+'</div>').join('');
+  h+='<div class="chk-key"><span class="cell ok">ok</span> adds up <span class="cell unverified">··</span> not cross-checked <span class="cell mismatch">!</span> does not add up <span class="cell missing">–</span> missing</div>';
+  return h;
+}
+async function loadCheck(){
+  try{const j=await fetch('api/check',{cache:'no-store'}).then(r=>r.json()),was=JSON.stringify(S.check);S.check=j;S.checkAt=Date.now();
+    if(JSON.stringify(j)!==was&&S.view==='check')render();else if(JSON.stringify(j)!==was&&S.view==='overview')render()}catch(e){}
+}
 
 function noticedCard(m){
   const n=notices(m),title='<h2 style="display:flex;gap:8px;align-items:center">'+ic('spark','accent')+'Noticed</h2>';
@@ -670,7 +698,7 @@ async function boot(){
   db.onChange(()=>{const s=db.get('settings','main');S.settings=s.exists?s.data():null;S.txRaw=db.collection('transactions').rows();S.rec=db.collection('recurring').rows();
     S.rules=db.collection('rules').rows();const o={};db.collection('budgets').rows().forEach(d=>o[d.id]=d);S.budgets=o;schedule()});
   let down=false;
-  async function tick(){try{await db.pull();if(!S.ready||down){if(!S.ready){S.anim='page';{const pr=S.settings&&S.settings.prefs;if(pr){S.period=pr.period==='year'?'year':'month';if(/^\d{4}-\d\d$/.test(pr.month||''))S.month=pr.month}}const ms=S.txRaw.filter(t=>t.date).map(t=>t.date.slice(0,7)).sort();if(ms.length&&!ms.includes(S.month))S.month=ms[ms.length-1]}S.ready=true;down=false;S.note='';schedule()}}
+  async function tick(){try{await db.pull();if(S.view==='check'||Date.now()-S.checkAt>30000)loadCheck();if(!S.ready||down){if(!S.ready){S.anim='page';{const pr=S.settings&&S.settings.prefs;if(pr){S.period=pr.period==='year'?'year':'month';if(/^\d{4}-\d\d$/.test(pr.month||''))S.month=pr.month}}const ms=S.txRaw.filter(t=>t.date).map(t=>t.date.slice(0,7)).sort();if(ms.length&&!ms.includes(S.month))S.month=ms[ms.length-1]}S.ready=true;down=false;S.note='';schedule()}}
     catch(e){if(!down){down=true;S.ready=true;S.note='Cannot reach the finances server. Retrying.';schedule()}}}
   await tick();setInterval(tick,4000);
 }

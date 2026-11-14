@@ -313,7 +313,7 @@ def test_run_sync_can_be_stopped_between_files_and_just_before_saving(srv, tmp_p
     for i in range(3):
         tiny_pdf(folder / ("s%d.pdf" % i), STATEMENT.replace("100.00", "%d.00" % (100 + i)))
     configure(srv, localFolder=str(folder))
-    real = server.statements.parse_pdf
+    real = server.statements.read_pdf
     calls = []
 
     def stop_after_first(path, hint=""):
@@ -321,12 +321,12 @@ def test_run_sync_can_be_stopped_between_files_and_just_before_saving(srv, tmp_p
         server.stop_sync()
         return real(path, hint)
 
-    monkeypatch.setattr(server.statements, "parse_pdf", stop_after_first)
+    monkeypatch.setattr(server.statements, "read_pdf", stop_after_first)
     srv.run_sync()
     assert len(calls) == 1 and srv.STORE["sync"]["ok"] is False and "Stopped" in srv.STORE["sync"]["message"]
     assert not srv.STORE["collections"]["transactions"] and srv.STORE["sync"].get("files", {}) == {}      # nothing kept, so it all gets read again
     # stopping while the last file is being read: the check right before saving catches it
-    monkeypatch.setattr(server.statements, "parse_pdf", lambda p, h="": (server.stop_sync(), real(p, h))[1])
+    monkeypatch.setattr(server.statements, "read_pdf", lambda p, h="": (server.stop_sync(), real(p, h))[1])
     configure(srv, localFolder=str(folder))
     for f in list(folder.glob("s[12].pdf")):
         f.unlink()

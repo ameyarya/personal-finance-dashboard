@@ -63,15 +63,8 @@ def test_unrecognised_text_returns_none_not_a_crash():
 def test_a_real_pdf_goes_through_text_extraction(tmp_path):
     pytest = __import__("pytest")
     pytest.importorskip("pypdf")
-    pw = pytest.importorskip("playwright.sync_api")
-    pdf = tmp_path / "bofa.pdf"
-    html = "<body style='font:12px sans-serif'>" + BOFA.replace("Deposits and other", "<br>Deposits and other").replace(" 11/26/25", "<br>11/26/25") + "</body>"
-    with pw.sync_playwright() as p:
-        b = p.chromium.launch()
-        page = b.new_page()
-        page.set_content(html)
-        page.pdf(path=str(pdf))
-        b.close()
+    from pdfs import tiny_pdf
+    pdf = tiny_pdf(tmp_path / "bofa.pdf", BOFA.replace("Deposits and other", "\nDeposits and other").replace(" 11/26/25", "\n11/26/25"))
     rows = st.parse_pdf(pdf)
     assert rows and sorted(r["amount"] for r in rows) == [-4999.0, 10.0, 5000.0]
 

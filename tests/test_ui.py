@@ -928,7 +928,7 @@ def test_MORE01_phone_shows_four_tabs_and_a_more_tab(browser, server):
     p.click(".more-btn")
     sheet = p.locator("#more-sheet")
     expect(sheet).to_be_visible()
-    assert [b.inner_text().strip() for b in sheet.locator("button").all()] == ["Budgets", "Insights", "Household", "Accounts"]
+    assert [b.inner_text().strip() for b in sheet.locator("button").all()] == ["Budgets", "Insights", "Household", "Data check", "Accounts"]
     expect(p.locator(".more-btn")).to_have_attribute("aria-expanded", "true")
     sheet.locator("button", has_text="Insights").click()
     expect(p.locator("#greet")).to_have_text("Insights")
@@ -948,7 +948,7 @@ def test_MORE01_phone_shows_four_tabs_and_a_more_tab(browser, server):
 
 def test_MORE02_desktop_has_no_more_tab_and_every_page_in_the_sidebar(page):
     expect(page.locator(".more-btn")).to_be_hidden()
-    assert len([b for b in page.locator("#nav button").all() if b.is_visible()]) == 8
+    assert len([b for b in page.locator("#nav button").all() if b.is_visible()]) == 9
 
 
 def test_MORE03_resizing_from_phone_to_desktop_closes_the_sheet(browser, server):
