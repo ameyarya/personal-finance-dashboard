@@ -29,6 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import auth
+import llm
 import statements
 
 HERE = Path(__file__).resolve().parent
@@ -526,6 +527,12 @@ def run_sync(force=False):
                 slog("    could not read it: %s" % str(e)[:100], "error")
                 ledger[str(f)] = dict(entry, state="unreadable", reason=str(e)[:60])
                 continue
+            if llm.model() and (got is None or (got[1]["kind"] == "statement" and statements.check_statement(*got)[0] == "mismatch")):
+                slog("    the usual reader could not make it add up, asking the local model", "warn")
+                alt = llm.read(statements.extract_text(f), label)
+                if alt:
+                    got = alt
+                    slog("    the local model read it and the balances add up")
             rows = got[0] if got else None
             if rows is None:
                 status["unreadable"].append("%s (layout not recognised)" % f.name)

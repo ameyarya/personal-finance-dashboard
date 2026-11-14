@@ -515,3 +515,21 @@ def test_a_force_sync_hands_earlier_unowned_transactions_to_the_person(srv, tmp_
     srv.run_sync(force=True)
     assert all(d["who"] == "Ann" for d in srv.STORE["collections"]["transactions"].values())
     assert len(srv.STORE["collections"]["transactions"]) >= 1
+
+
+def test_run_sync_asks_the_local_model_only_when_the_usual_reader_fails_and_keeps_its_rows_only_if_they_reconcile(srv, tmp_path, monkeypatch):
+    folder = tmp_path / "p"
+    folder.mkdir()
+    tiny_pdf(folder / "odd.pdf", "a layout nobody has seen")
+    configure(srv, localFolder=str(folder))
+    asked = []
+    monkeypatch.setattr(server.llm, "model", lambda: "tiny")
+    monkeypatch.setattr(server.llm, "read", lambda text, hint="": asked.append(text) or None)
+    srv.run_sync()                                                           # the model has nothing either: still unreadable
+    assert asked and srv.STORE["sync"]["ledger"][str(folder / "odd.pdf")]["state"] == "unreadable"
+    rows = [{"date": "2026-10-03", "desc": "SHOP", "amount": -5.0, "card": "Visa"}]
+    meta = {"start": "2026-10-01", "end": "2026-10-31", "opening": 0.0, "closing": 5.0, "kind": "statement"}
+    monkeypatch.setattr(server.llm, "read", lambda text, hint="": (rows, meta))
+    srv.run_sync(force=True)
+    assert srv.STORE["sync"]["ledger"][str(folder / "odd.pdf")]["state"] == "ok"
+    assert "the local model read it" in "\n".join(lines(srv))

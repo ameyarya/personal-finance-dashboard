@@ -86,6 +86,17 @@ over from one statement to the next, files that could not be read, and accounts 
 Overview shows a notice until everything is complete. It is built during a sync, so use *Sync now* with a full re-read
 once after updating. Statements that do not print both balances are marked "not cross-checked".
 
+### Optional local model for hard statements
+
+If a statement's layout is not recognised, or its transactions do not add up to the printed closing balance, a small
+model running on this computer through [Ollama](https://ollama.com) can have a go. Nothing leaves the machine. Its answer is
+kept only if the balances then reconcile, so a wrong reading is rejected rather than saved.
+
+```bash
+ollama pull qwen2.5:3b
+FINANCES_LLM=qwen2.5:3b python3 server.py      # off unless FINANCES_LLM names a model
+```
+
 ## HTTPS
 
 Pass a certificate and key and the page is served over https on the same port:
