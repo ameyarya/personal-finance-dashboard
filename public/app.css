@@ -433,8 +433,7 @@ code{font:12px ui-monospace,Menlo,monospace;background:var(--glass2);border-radi
 .avatar.big{display:grid;place-items:center;flex:none}
 
 /* ---- swiping cards ---- */
-.cstack{touch-action:pan-y;user-select:none;-webkit-user-select:none}
-.vcard[data-act="cflip"]{cursor:grab}.vcard[data-act="cflip"]:active{cursor:grabbing}
+.cstack{user-select:none;-webkit-user-select:none}
 .vrow i{font-style:normal;opacity:.7;margin-right:8px;font-size:12px}
 .vrow span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1;margin-right:10px}
 

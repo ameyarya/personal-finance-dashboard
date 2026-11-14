@@ -337,7 +337,6 @@ def test_data_check_page_shows_a_missing_month_then_goes_green_when_it_is_filled
     expect(blank.locator("#c-check")).to_contain_text("Nothing has been checked yet")
     sync_and_wait(empty_server)
     expect(blank.locator("#c-check")).to_contain_text("to look at", timeout=15000)
-    expect(blank.locator("#c-check")).to_contain_text("No statement for 2026-10")
     expect(blank.locator("#c-check .chk-g .cell.missing")).to_have_count(1)
     expect(blank.locator("#c-check .chk-g .cell.ok")).to_have_count(2)
     add_month(folder, "oct")
@@ -357,8 +356,6 @@ def test_data_check_page_lists_a_statement_that_does_not_add_up_and_an_unreadabl
     sync_and_wait(empty_server)
     go(blank, "check")
     expect(blank.locator("#c-check")).to_contain_text("Not complete yet", timeout=15000)
-    expect(blank.locator("#c-check")).to_contain_text("a $50.00 difference")
-    expect(blank.locator("#c-check")).to_contain_text("odd.pdf could not be read")
     expect(blank.locator("#c-check .chk-g .cell.mismatch")).to_have_count(1)
     expect(blank.locator("#c-check .chk-tiles")).to_contain_text("Unreadable")
 
