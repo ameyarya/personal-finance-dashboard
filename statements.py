@@ -395,11 +395,16 @@ def statement_meta(text):
     return meta
 
 
+GREEN_DOT = re.compile(r"Statement for the banking services provided by Green Dot Bank")
+
+
 def read_pdf(path, hint=""):
-    """(rows, meta) for one statement, or None when no parser recognises it. meta also says kind: 'statement' or 'payments'."""
+    """(rows, meta) for one statement, or None when no parser recognises it. meta also says kind: 'statement', 'payments' or 'companion'."""
     text = extract_text(path)
     rows = parse_text(text, hint)
     if rows is None:
+        if GREEN_DOT.search(text):                        # the partner bank's copy of activity the Cash Account statement already lists: nothing to add
+            return [], dict(statement_meta(text), kind="companion")
         return None
     meta = statement_meta(text)
     meta["kind"] = "payments" if parse_payment_history(text) is not None else "statement"

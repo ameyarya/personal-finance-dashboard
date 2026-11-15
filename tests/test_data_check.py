@@ -431,3 +431,11 @@ def test_data_page_follows_the_month_and_year_switch(blank, empty_server, tmp_pa
     blank.click('#period [data-id="year"]')
     expect(blank.locator("#c-check h3")).to_have_text("2026")
     expect(blank.locator("#c-check .chk-g .cell")).to_have_count(3)
+
+
+def test_a_partner_bank_copy_of_cash_account_activity_is_a_companion_not_an_unreadable_file(tmp_path):
+    pytest.importorskip("pypdf")
+    text = ("Statement for the banking services provided by Green Dot Bank, Member FDIC. STATEMENT PERIOD Jan. 1, 2025 to Jan. 31, 2025 "
+            "TRANSACTIONS DATE DESCRIPTION AMOUNT No Transactions ACCOUNT SUMMARY Beginning Balance on Jan. 1, 2025 $0.00 Ending Balance on Jan. 31, 2025 $0.00")
+    rows, meta = st.read_pdf(tiny_pdf(tmp_path / "gd.pdf", text), "Wealthfront")
+    assert rows == [] and meta["kind"] == "companion"

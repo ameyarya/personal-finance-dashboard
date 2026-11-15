@@ -541,7 +541,7 @@ def run_sync(force=False):
             else:
                 meta = got[1]
                 state, diff = statements.check_statement(rows, meta)
-                if meta["kind"] == "payments":
+                if meta["kind"] != "statement":
                     state = "ignored"
                 ledger[str(f)] = dict(entry, state=state, diff=diff, count=len(rows), start=meta["start"] or (min(r["date"] for r in rows) if rows else None),
                                       end=meta["end"] or (max(r["date"] for r in rows) if rows else None),
