@@ -109,7 +109,7 @@ def parse_wealthfront(text):
     text = re.sub(r"(\d{1,2}/\d{1,2}/\d{3}) (\d) ", r"\1\2 ", text)           # the PDF sometimes splits a year: "10/14/202 5"
     for r in re.finditer(r"(\d{1,2})/(\d{1,2})/(\d{4}) (\w+ \d{4}) \$(%s)" % NUM, text[text.find("INTEREST"):] if "INTEREST" in text else ""):
         out.append(row(iso(int(r.group(3)), int(r.group(1)), int(r.group(2))), "%s interest" % r.group(4).split()[0], money(r.group(5)), card, cash=True))
-    for r in re.finditer(r"(\d{1,2})/(\d{1,2})/(\d{4}) (ACH|End of day transfer (?:from|to) Green Dot|RTP/FedNow)\d? (Received|Disbursed) -?\$(%s)" % NUM, text):
+    for r in re.finditer(r"(\d{1,2})/(\d{1,2})/(\d{4}) (ACH|End of day transfer (?:from|to) Green Dot|RTP(?:/FedNow)?)\d? (Received|Disbursed) -?\$(%s)" % NUM, text):
         sign = 1 if r.group(5) == "Received" else -1                              # money in or out of the account, not the moves between its partner banks
         name = "Green Dot" if "Green Dot" in r.group(4) else r.group(4)
         out.append(row(iso(int(r.group(3)), int(r.group(1)), int(r.group(2))), "%s transfer %s" % (name, "in" if sign > 0 else "out"), sign * money(r.group(6)), card, cash=True))
@@ -408,6 +408,8 @@ def read_pdf(path, hint=""):
         return None
     meta = statement_meta(text)
     meta["kind"] = "payments" if parse_payment_history(text) is not None else "statement"
+    if "Wealthfront" in text and "Automated Investing" in text:      # an investment account: its balance moves with the market, so deposits alone can never add up to it
+        meta["opening"] = meta["closing"] = None
     return rows, meta
 
 

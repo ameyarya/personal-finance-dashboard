@@ -105,14 +105,14 @@ def test_chase_checking_survives_a_page_break_in_the_middle_of_the_list():
 
 
 def test_wealthfront_reads_deposits_and_withdrawals_and_a_year_the_pdf_split_in_two():
-    text = n("Wealthfront Monthly Statement II. Account Activity January 1, 2025 Starting Balance $100.00 January 31, 2025 Ending Balance $120.00 "
+    text = n("Wealthfront Monthly Statement II. Account Activity January 1, 2025 Starting Balance $100.00 January 31, 2025 Ending Balance $113.00 "
              "Deposits/Credits to Wealthfront Brokerage Date Method Status Amount 1/2/2025 ACH Received $50.00 1/15/2025 End of day transfer from Green Dot2 Received $5.00 "
-             "Total $55.00 Date Method Status Amount 1/7/2025 End of day transfer to Green Dot Disbursed -$10.00 1/16/2025 RTP/FedNow3 Disbursed -$20.00 Total -$30.00 "
+             "Total $55.00 Date Method Status Amount 1/7/2025 End of day transfer to Green Dot Disbursed -$10.00 1/16/2025 RTP/FedNow3 Disbursed -$20.00 1/20/2025 RTP Disbursed -$7.00 Total -$30.00 "
              "Date Security Symbol/CUSIP Type Shares Share Price Value 1/6/2025 -- -- Transfer out -- -- -$10.00 1/14/202 5 -- -- Transfer out -- -- -$5.00 "
              "Transfer between Wealthfront and Program Banks Date Method Amount 1/2/2025 Transfer from Program Banks $50.00 "
              "INTEREST5 Date Interest Period Amount 1/1/2025 December 2024 $10.00 Total $10.00")
     rows = st.parse_text(text)
-    assert sorted(r["amount"] for r in rows) == [-20.0, -10.0, -10.0, -5.0, 5.0, 10.0, 50.0]
+    assert sorted(r["amount"] for r in rows) == [-20.0, -10.0, -10.0, -7.0, -5.0, 5.0, 10.0, 50.0]
     assert any(r["desc"] == "Green Dot transfer in" for r in rows) and any(r["desc"] == "RTP/FedNow transfer out" for r in rows)
     assert all(r["category"] == "Transfer" for r in rows if "transfer" in r["desc"])
     assert st.check_statement(rows, st.statement_meta(text)) == ("ok", 0.0)
@@ -442,3 +442,11 @@ def test_a_partner_bank_copy_of_cash_account_activity_is_a_companion_not_an_unre
             "TRANSACTIONS DATE DESCRIPTION AMOUNT No Transactions ACCOUNT SUMMARY Beginning Balance on Jan. 1, 2025 $0.00 Ending Balance on Jan. 31, 2025 $0.00")
     rows, meta = st.read_pdf(tiny_pdf(tmp_path / "gd.pdf", text), "Wealthfront")
     assert rows == [] and meta["kind"] == "companion"
+
+
+def test_a_wealthfront_investment_statement_is_not_cross_checked_because_the_market_moves_its_balance(tmp_path):
+    pytest.importorskip("pypdf")
+    text = ("Wealthfront Automated Investing Monthly Statement for March 1 - 31, 2025 Account Activity March 1, 2025 Balance $1,000.00 March 31, 2025 Ending Balance $1,300.00 "
+            "TRANSFERS Date Security Symbol/CUSIP Type Shares Share Price Value 3/5/2025 -- -- Transfer out -- -- -$50.00 Total -$50.00")
+    rows, meta = st.read_pdf(tiny_pdf(tmp_path / "wf.pdf", text), "Wealthfront")
+    assert meta["opening"] is None and meta["closing"] is None and st.check_statement(rows, meta)[0] == "unverified"
