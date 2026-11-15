@@ -372,9 +372,14 @@ def merge_files(per_file):
 DATE_SLACK_DAYS = 4      # the same payment is dated a day or two apart by the card (purchase date) and by the bank feed (posting date)
 
 
-def take_match(have, card, amount, date):
+def match_key(card, amount, cash=False):
+    """Cards file a payment as money in on one source and money out on another, so only the size matters; a bank account's sign is real."""
+    return (card, round(float(amount) if cash else abs(float(amount)), 2))
+
+
+def take_match(have, card, amount, date, cash=False):
     """If an unmatched existing payment has this card and amount on this date (or within a few days), use it up and say True."""
-    dates = have.get((card, round(abs(float(amount)), 2)), [])
+    dates = have.get(match_key(card, amount, cash), [])
     if date in dates:
         dates.remove(date)
         return True
@@ -398,7 +403,7 @@ def add_statement_rows(parsed, window):
         docs = STORE["collections"]["transactions"]
         have = {}
         for t in docs.values():
-            have.setdefault((t.get("card", ""), round(abs(float(t.get("amount", 0))), 2)), []).append(t.get("date", ""))
+            have.setdefault(match_key(t.get("card", ""), t.get("amount", 0), t.get("cash")), []).append(t.get("date", ""))
         added = skipped = dupes = 0
         seen = {}
         unowned = {}
@@ -410,7 +415,7 @@ def add_statement_rows(parsed, window):
             if (lo and year < lo) or (hi and year > hi):
                 skipped += 1
                 continue
-            if take_match(have, r["card"], r["amount"], r["date"]):
+            if take_match(have, r["card"], r["amount"], r["date"], r.get("cash")):
                 dupes += 1
                 waiting = unowned.get((r["card"], round(abs(r["amount"]), 2), r["date"]))
                 if r.get("who") and waiting:
@@ -439,8 +444,8 @@ def drop_pdf_duplicates():
         have = {}
         for t in docs.values():
             if t.get("source") != "pdf":
-                have.setdefault((t.get("card", ""), round(abs(float(t.get("amount", 0))), 2)), []).append(t.get("date", ""))
-        gone = [k for k, t in sorted(docs.items(), key=lambda kv: kv[1].get("date", "")) if t.get("source") == "pdf" and take_match(have, t.get("card", ""), t.get("amount", 0), t.get("date", ""))]
+                have.setdefault(match_key(t.get("card", ""), t.get("amount", 0), t.get("cash")), []).append(t.get("date", ""))
+        gone = [k for k, t in sorted(docs.items(), key=lambda kv: kv[1].get("date", "")) if t.get("source") == "pdf" and take_match(have, t.get("card", ""), t.get("amount", 0), t.get("date", ""), t.get("cash"))]
         for k in gone:
             del docs[k]
         return len(gone)

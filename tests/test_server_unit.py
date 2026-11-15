@@ -573,3 +573,13 @@ def test_run_sync_removes_stored_statement_rows_that_fall_outside_a_narrowed_yea
     srv.run_sync()
     assert "old" not in srv.STORE["collections"]["transactions"]
     assert "Removed 1 statement transaction outside the years you chose" in "\n".join(lines(srv))
+
+
+def test_a_bank_accounts_deposit_is_not_mistaken_for_a_withdrawal_of_the_same_size_a_day_apart(srv):
+    srv.STORE["collections"]["transactions"]["a"] = {"date": "2025-02-01", "amount": -376.18, "card": "Bank", "cash": True, "source": "statement"}
+    row = {"date": "2025-02-01", "desc": "interest", "amount": 376.18, "card": "Bank", "cash": True}
+    assert server.add_statement_rows([[row]], (None, None))[0] == 1                      # money in is new even though money out of the same size is stored
+    assert server.add_statement_rows([[row]], (None, None))[2] == 1                      # and the same deposit again is a duplicate
+    card = {"date": "2025-02-01", "desc": "refund", "amount": 20.0, "card": "Visa"}
+    srv.STORE["collections"]["transactions"]["c"] = {"date": "2025-02-01", "amount": -20.0, "card": "Visa", "source": "statement"}
+    assert server.add_statement_rows([[card]], (None, None))[2] == 1                     # cards keep matching on size alone
