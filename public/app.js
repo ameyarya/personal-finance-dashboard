@@ -21,7 +21,7 @@ const ICONS={shield:'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM8.5 12l2.5 2.5 4
 const ic=(n,col)=>'<svg class="ic" viewBox="0 0 24 24"'+(col?' style="color:var(--'+col+')"':'')+' aria-hidden="true"><path d="'+(ICONS[n]||ICONS.dots)+'"/></svg>';
 const catIco=(c,col)=>{const m=CATMETA[c]||CATMETA.Other;return '<span class="ico">'+ic(m[0],col||m[1])+'</span>'};
 const MAIN_TABS=4;
-const VIEWS=[['overview','Overview','grid'],['cards','Cards','card'],['payments','Transactions','swap'],['bills','Bills','cal'],['budgets','Budgets','pie'],['insights','Insights','chart'],['household','Household','users'],['check','Data check','shield'],['accounts','Accounts','bank']];
+const VIEWS=[['overview','Overview','grid'],['cards','Cards','card'],['payments','Transactions','swap'],['bills','Bills','cal'],['budgets','Budgets','pie'],['insights','Insights','chart'],['household','Household','users'],['check','Data','shield'],['accounts','Accounts','bank']];
 const LOCALE={USD:'en-US',EUR:'en-IE',GBP:'en-GB',CAD:'en-CA',AUD:'en-AU',INR:'en-IN',SGD:'en-SG',AED:'en-AE',JPY:'ja-JP',MXN:'es-MX'};
 const DEF={household:'Our household',currency:'USD',opening:0,members:['You','Partner']};
 const pad=n=>String(n).padStart(2,'0');
@@ -263,17 +263,20 @@ function refreshTx(){if(!$('tx-list'))return;const m=monthData(curMo()),list=fil
 const CHK_LABEL={ok:'Matches the statement',unverified:'Statement does not print both balances, so it could not be cross-checked',mismatch:'Does not add up',missing:'No statement'};
 function checkCard(){
   const k=S.check,head=(t,s)=>'<div class="head"><div><h2>'+t+'</h2>'+(s?'<small>'+s+'</small>':'')+'</div></div>';
-  if(!k)return head('Data check','Loading')+'<div class="empty">Checking your statements…</div>';
-  if(!k.checked)return head('Data check','Not run yet')+'<div class="empty">Nothing has been checked yet. Open Accounts, press Sync now and choose a full re-read: each statement is then compared with the balances it prints.</div>';
-  const c=k.counts,bad=c.missing+c.mismatch+c.unreadable+k.accounts.reduce((n,a)=>n+a.issues.filter(i=>['stale','nodate'].includes(i.kind)).length,0);
-  let h=head('Data check',k.complete?'Every statement is here and every balance adds up':plural(bad||1,'thing')+' to look at');
+  if(!k)return head('Data','Loading')+'<div class="empty">Checking your statements…</div>';
+  if(!k.checked)return head('Data','Not run yet')+'<div class="empty">Nothing has been checked yet. Open Accounts, press Sync now and choose a full re-read: each statement is then compared with the balances it prints.</div>';
+  const yr=S.period==='year',inP=x=>yr?x.mo.slice(0,4)===S.month.slice(0,4):x.mo===S.month,when=yr?S.month.slice(0,4):mLong(S.month)+' '+S.month.slice(0,4);
+  const accts=k.accounts.map(a=>Object.assign({},a,{cells:a.cells.filter(inP)})).filter(a=>a.cells.length);
+  const cells=accts.flatMap(a=>a.cells),n=st=>cells.filter(x=>x.state===st).length,c=k.counts;
+  const bad=n('missing')+n('mismatch')+c.unreadable+k.accounts.reduce((t,a)=>t+a.issues.filter(i=>['stale','nodate'].includes(i.kind)).length,0);
+  let h=head('Data',k.complete?'Every statement is here and every balance adds up':plural(bad||1,'thing')+' to look at');
   h+='<div class="hint" style="margin-top:0">'+ic(k.complete?'shield':'info','accent')+'<span>'+(k.complete?'<b>Complete.</b> No months are missing between your statements and each statement\'s opening balance plus its transactions equals the closing balance it prints.'
-    :'<b>Not complete yet.</b> The red months below are gaps or figures that do not match. Add the missing statements to the folder and sync again.')+'</span></div>';
-  h+='<div class="chk-tiles" style="margin:12px 0">'+[['Statements',c.statements],['Add up',c.ok],['Not cross-checked',c.unverified],['Do not add up',c.mismatch],['Months missing',c.missing],['Unreadable',c.unreadable]].map(t=>'<div class="tile"><small>'+t[0]+'</small><b>'+t[1]+'</b></div>').join('')+'</div>';
-  h+='<h3 style="margin:16px 0 6px">Month by month</h3>';
-  h+=k.accounts.map(a=>'<div class="chk"><div class="chk-h"><b>'+esc(a.name)+'</b>'+(a.person?' <small>'+esc(a.person)+'</small>':'')+'<small> · '+esc(a.first)+' to '+esc(a.last)+'</small></div><div class="chk-g">'+
-    a.cells.map(x=>'<span class="cell '+x.state+'" title="'+esc(x.mo+': '+(CHK_LABEL[x.state]||x.state))+'" aria-label="'+esc(x.mo+': '+(CHK_LABEL[x.state]||x.state))+'">'+x.mo.slice(5)+'</span>').join('')+'</div>'+
-    a.issues.filter(i=>i.kind==='late').map(i=>'<div class="chk-n">'+esc(i.text)+'</div>').join('')+'</div>').join('');
+    :'<b>Not complete yet.</b> The red months are gaps or figures that do not match. Add the missing statements to the folder and sync again.')+'</span></div>';
+  h+='<h3 style="margin:16px 0 6px">'+when+'</h3>';
+  h+='<div class="chk-tiles" style="margin:12px 0">'+[['Statements',n('ok')+n('unverified')+n('mismatch')],['Add up',n('ok')],['Not cross-checked',n('unverified')],['Do not add up',n('mismatch')],['Months missing',n('missing')],['Unreadable',c.unreadable]].map(t=>'<div class="tile"><small>'+t[0]+'</small><b>'+t[1]+'</b></div>').join('')+'</div>';
+  h+=accts.length?accts.map(a=>'<div class="chk"><div class="chk-h"><b>'+esc(a.name)+'</b>'+(a.person?' <small>'+esc(a.person)+'</small>':'')+'<small> · '+esc(a.first)+' to '+esc(a.last)+'</small></div><div class="chk-g">'+
+    a.cells.map(x=>'<span class="cell '+x.state+'" title="'+esc(x.mo+': '+(CHK_LABEL[x.state]||x.state))+'" aria-label="'+esc(x.mo+': '+(CHK_LABEL[x.state]||x.state))+'">'+(yr?x.mo.slice(5):mShort(x.mo))+'</span>').join('')+'</div>'+
+    a.issues.filter(i=>i.kind==='late').map(i=>'<div class="chk-n">'+esc(i.text)+'</div>').join('')+'</div>').join(''):'<div class="empty">No statements fall in '+when+'.</div>';
   h+='<div class="chk-key"><span class="cell ok">ok</span> adds up <span class="cell unverified">··</span> not cross-checked <span class="cell mismatch">!</span> does not add up <span class="cell missing">–</span> missing</div>';
   return h;
 }

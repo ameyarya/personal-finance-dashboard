@@ -936,7 +936,7 @@ def test_MORE01_phone_shows_four_tabs_and_a_more_tab(browser, server):
     p.click(".more-btn")
     sheet = p.locator("#more-sheet")
     expect(sheet).to_be_visible()
-    assert [b.inner_text().strip() for b in sheet.locator("button").all()] == ["Budgets", "Insights", "Household", "Data check", "Accounts"]
+    assert [b.inner_text().strip() for b in sheet.locator("button").all()] == ["Budgets", "Insights", "Household", "Data", "Accounts"]
     expect(p.locator(".more-btn")).to_have_attribute("aria-expanded", "true")
     sheet.locator("button", has_text="Insights").click()
     expect(p.locator("#greet")).to_have_text("Insights")

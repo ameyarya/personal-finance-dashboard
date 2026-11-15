@@ -334,6 +334,7 @@ def test_data_check_page_shows_a_missing_month_then_goes_green_when_it_is_filled
     folder = seed_statements(empty_server, tmp_path, ("sep", "nov"))        # October is missing
     blank.reload()
     go(blank, "check")
+    blank.click('#period [data-id="year"]')
     expect(blank.locator("#c-check")).to_contain_text("Nothing has been checked yet")
     sync_and_wait(empty_server)
     expect(blank.locator("#c-check")).to_contain_text("to look at", timeout=15000)
@@ -355,6 +356,7 @@ def test_data_check_page_lists_a_statement_that_does_not_add_up_and_an_unreadabl
     blank.reload()
     sync_and_wait(empty_server)
     go(blank, "check")
+    blank.click('#period [data-id="year"]')
     expect(blank.locator("#c-check")).to_contain_text("Not complete yet", timeout=15000)
     expect(blank.locator("#c-check .chk-g .cell.mismatch")).to_have_count(1)
     expect(blank.locator("#c-check .chk-tiles")).to_contain_text("Unreadable")
@@ -372,7 +374,7 @@ def test_overview_points_to_the_data_check_when_statements_are_not_complete(blan
         blank.click('#c-noticed [data-act="note"][data-id="1"]')
     expect(blank.locator("#c-noticed")).to_contain_text("Your statements are not complete")
     blank.click('#c-noticed [data-act="view"]')
-    expect(blank.locator("#greet")).to_have_text("Data check")
+    expect(blank.locator("#greet")).to_have_text("Data")
 
 
 def test_data_check_page_notes_an_account_that_starts_late_and_statements_it_could_not_cross_check(blank, empty_server, tmp_path):
@@ -408,3 +410,24 @@ def test_audit_lets_a_long_export_cover_every_month_it_spans():
     cells = {c["mo"]: c["state"] for c in r["accounts"][0]["cells"]}
     assert r["counts"]["missing"] == 0 and cells["2025-06"] == "unverified" and cells["2025-12"] == "unverified" and cells["2024-12"] == "ok"
     assert r["complete"]
+
+
+def test_data_page_follows_the_month_and_year_switch(blank, empty_server, tmp_path):
+    pytest.importorskip("pypdf")
+    seed_statements(empty_server, tmp_path, ("sep", "nov"))                  # October is missing
+    sync_and_wait(empty_server)
+    blank.reload()
+    go(blank, "check")
+    expect(blank.locator("#c-check h3")).to_have_text("November 2026", timeout=15000)       # the month view shows only November
+    expect(blank.locator("#c-check .chk-g .cell")).to_have_count(1)
+    expect(blank.locator("#c-check .chk-g .cell.ok")).to_have_count(1)
+    blank.click("#prev")
+    expect(blank.locator("#c-check h3")).to_have_text("October 2026")
+    expect(blank.locator("#c-check .chk-g .cell.missing")).to_have_count(1)
+    expect(blank.locator("#c-check .chk-tiles")).to_contain_text("Months missing1")
+    blank.click("#prev")
+    expect(blank.locator("#c-check h3")).to_have_text("September 2026")
+    expect(blank.locator("#c-check .chk-g .cell.ok")).to_have_count(1)
+    blank.click('#period [data-id="year"]')
+    expect(blank.locator("#c-check h3")).to_have_text("2026")
+    expect(blank.locator("#c-check .chk-g .cell")).to_have_count(3)
