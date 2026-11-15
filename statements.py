@@ -492,13 +492,14 @@ def audit(entries, today):
                     issues.append({"kind": "missing", "months": gap, "text": "No statement for %s (between the ones ending %s and %s)." % (", ".join(gap), prev["end"], x["end"])})
                 elif prev.get("closing") is not None and x.get("opening") is not None and abs(prev["closing"] - x["opening"]) > 0.015:
                     counts["missing"] += 1
+                    cells[x["end"][:7]] = "chain" if cells.get(x["end"][:7]) in (None, "ok", "unverified") else cells[x["end"][:7]]
                     issues.append({"kind": "chain", "text": "The balance jumps from $%.2f (statement ending %s) to $%.2f (statement ending %s). A statement between them may be missing." % (prev["closing"], prev["end"], x["opening"], x["end"])})
             prev = x
         if dated and _days(dated[-1]["end"], today) > 62:
             issues.append({"kind": "stale", "text": "The newest statement ends %s, %d days ago. Newer ones may be missing." % (dated[-1]["end"], _days(dated[-1]["end"], today))})
         if dated and earliest and dated[0]["end"][:7] > _add_days(earliest + "-15", 45)[:7]:
             issues.append({"kind": "late", "text": "Statements begin with %s. Anything before that is not in the dashboard." % dated[0]["end"][:7]})
-        accounts.append({"name": label, "person": person, "first": dated[0]["end"][:7] if dated else "", "last": dated[-1]["end"][:7] if dated else "",
+        accounts.append({"name": label, "person": person, "first": min(cells) if cells else "", "last": max(cells) if cells else "",
                          "cells": [{"mo": mo, "state": cells[mo]} for mo in sorted(cells)], "issues": issues})
     broken = ("missing", "chain", "mismatch", "stale", "nodate")          # "late" is a note: the account may simply be newer
     complete = bool(accounts) and not counts["unreadable"] and not any(i["kind"] in broken for a in accounts for i in a["issues"])
