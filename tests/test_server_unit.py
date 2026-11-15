@@ -568,6 +568,7 @@ def test_run_sync_removes_stored_statement_rows_that_fall_outside_a_narrowed_yea
     folder.mkdir()
     tiny_pdf(folder / "s.pdf", STATEMENT)
     configure(srv, localFolder=str(folder))
+    srv.run_sync()                                                              # the first pass reads everything and records the reader version
     srv.STORE["collections"]["transactions"]["old"] = {"date": "2023-12-30", "amount": -5.0, "card": "Visa", "source": "pdf"}
     configure(srv, localFolder=str(folder), fromYear="2024")
     srv.run_sync()
@@ -589,3 +590,22 @@ def test_two_different_withdrawals_from_two_accounts_a_couple_of_days_apart_are_
     row = lambda d, desc: {"date": d, "desc": desc, "amount": -500.0, "card": "Bank", "cash": True}
     assert server.add_statement_rows([[row("2024-05-22", "transfer a")]], (None, None))[0] == 1
     assert server.add_statement_rows([[row("2024-05-22", "transfer a"), row("2024-05-24", "transfer b")]], (None, None)) == (1, 0, 1)      # the 24th is new; the 22nd is the same row again
+
+
+def test_a_full_re_read_removes_statement_rows_no_statement_contains_but_keeps_edited_and_hand_entered_ones(srv, tmp_path):
+    folder = tmp_path / "p"
+    folder.mkdir()
+    tiny_pdf(folder / "s.pdf", STATEMENT)
+    configure(srv, localFolder=str(folder))
+    srv.run_sync()
+    docs = srv.STORE["collections"]["transactions"]
+    real = next(k for k, t in docs.items() if t.get("source") == "pdf")
+    docs[real]["category"] = "Dining"                                                    # the person recategorised it
+    docs[real]["desc"] = "My own words"
+    docs["ghost"] = {"date": "2025-05-05", "amount": 3362.0, "card": "Visa", "source": "pdf", "desc": "garbled page break"}
+    docs["mine"] = {"date": "2025-05-05", "amount": 12.0, "card": "Visa"}
+    srv.run_sync(force=True)
+    assert "ghost" not in docs and "mine" in docs and docs[real]["category"] == "Dining"
+    assert "no statement contains any more" in "\n".join(lines(srv))
+    srv.run_sync(force=True)
+    assert real in docs                                                                  # nothing real is lost on the next pass

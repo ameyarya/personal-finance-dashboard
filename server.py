@@ -465,6 +465,30 @@ def drop_pdf_rows_outside(window):
         return len(gone)
 
 
+def drop_stale_pdf_rows(parsed):
+    """After every statement was read again: remove stored statement rows that no statement produces any more (a row an older reader made from a
+    page break, say). Rows are compared on card, exact date and amount, so an edited category or person never makes a row go."""
+    produced = {}
+    for rows in parsed:
+        for r in rows:
+            k = match_key(r["card"], r["amount"], r.get("cash")) + (r["date"],)
+            produced[k] = produced.get(k, 0) + 1
+    with lock:
+        docs = STORE["collections"]["transactions"]
+        gone = []
+        for k, t in sorted(docs.items(), key=lambda kv: kv[1].get("date", "")):
+            if t.get("source") != "pdf":
+                continue
+            key = match_key(t.get("card", ""), t.get("amount", 0), t.get("cash")) + (t.get("date", ""),)
+            if produced.get(key):
+                produced[key] -= 1
+            else:
+                gone.append(k)
+        for k in gone:
+            del docs[k]
+        return len(gone)
+
+
 MAX_DEPTH = 12
 
 
@@ -583,6 +607,10 @@ def run_sync(force=False):
         removed = drop_pdf_duplicates()
         if removed:
             slog("Removed %d transaction%s an earlier pass had added twice" % (removed, "" if removed == 1 else "s"), "warn")
+        if force and not status["unreadable"]:                  # every file was read just now, so what no file produces is left over from an older reader
+            stale = drop_stale_pdf_rows([merge_files(parsed)])
+            if stale:
+                slog("Removed %d statement transaction%s that no statement contains any more" % (stale, "" if stale == 1 else "s"), "warn")
         outside = drop_pdf_rows_outside(window)
         if outside:
             slog("Removed %d statement transaction%s outside the years you chose" % (outside, "" if outside == 1 else "s"), "warn")
