@@ -143,6 +143,7 @@ def persist():
 
 def public_store():
     sync = {k: v for k, v in STORE.get("sync", {}).items() if k != "files"}
+    sync["statementOpening"] = statements.opening_total(sync.get("ledger") or {}, year_window(sync_settings())[0])
     sync.update(running=SYNC["running"], phase=SYNC["phase"], done=SYNC["done"], total=SYNC["total"], started=SYNC["started"], pypdf=pypdf_available())
     return {"version": STORE["version"], "collections": STORE["collections"], "sync": sync}
 
@@ -445,6 +446,18 @@ def drop_pdf_duplicates():
         return len(gone)
 
 
+def drop_pdf_rows_outside(window):
+    """A year range narrowed after rows were stored: remove the statement rows that fall outside it (rows typed or imported by hand stay)."""
+    lo, hi = window
+    with lock:
+        docs = STORE["collections"]["transactions"]
+        gone = [k for k, t in docs.items() if t.get("source") == "pdf" and t.get("date")
+                and ((lo and int(t["date"][:4]) < lo) or (hi and int(t["date"][:4]) > hi))]
+        for k in gone:
+            del docs[k]
+        return len(gone)
+
+
 MAX_DEPTH = 12
 
 
@@ -546,7 +559,7 @@ def run_sync(force=False):
                 state, diff = statements.check_statement(rows, meta)
                 if meta["kind"] != "statement":
                     state = "ignored"
-                ledger[str(f)] = dict(entry, state=state, diff=diff, count=len(rows), start=meta["start"] or (min(r["date"] for r in rows) if rows else None),
+                ledger[str(f)] = dict(entry, state=state, diff=diff, count=len(rows), acct=meta.get("account", ""), cash=any(r.get("cash") for r in rows), start=meta["start"] or (min(r["date"] for r in rows) if rows else None),
                                       end=meta["end"] or (max(r["date"] for r in rows) if rows else None),
                                       opening=meta["opening"], closing=meta["closing"])
                 if state == "mismatch":
@@ -563,6 +576,9 @@ def run_sync(force=False):
         removed = drop_pdf_duplicates()
         if removed:
             slog("Removed %d transaction%s an earlier pass had added twice" % (removed, "" if removed == 1 else "s"), "warn")
+        outside = drop_pdf_rows_outside(window)
+        if outside:
+            slog("Removed %d statement transaction%s outside the years you chose" % (outside, "" if outside == 1 else "s"), "warn")
         added, skipped, dupes = add_statement_rows(parsed, window)
         with lock:
             seen_files.update(pending)

@@ -549,3 +549,27 @@ def test_run_sync_reads_everything_again_once_after_the_readers_change(srv, tmp_
     assert "readers have been updated" in log and "unchanged, skipped" not in log
     srv.run_sync()
     assert "readers have been updated" not in "\n".join(lines(srv))
+
+
+def test_narrowing_the_year_range_removes_statement_rows_outside_it_but_keeps_hand_entered_ones(srv):
+    docs = {"old": {"date": "2023-12-30", "amount": -5.0, "card": "Visa", "source": "pdf"},
+            "mine": {"date": "2023-12-30", "amount": -6.0, "card": "Visa"},
+            "new": {"date": "2024-01-02", "amount": -7.0, "card": "Visa", "source": "pdf"},
+            "late": {"date": "2026-01-02", "amount": -8.0, "card": "Visa", "source": "pdf"},
+            "undated": {"amount": -9.0, "card": "Visa", "source": "pdf"}}
+    srv.STORE["collections"]["transactions"].update(docs)
+    assert server.drop_pdf_rows_outside((2024, 2025)) == 2
+    assert sorted(srv.STORE["collections"]["transactions"]) == ["mine", "new", "undated"]
+    assert server.drop_pdf_rows_outside((None, None)) == 0
+
+
+def test_run_sync_removes_stored_statement_rows_that_fall_outside_a_narrowed_year_range(srv, tmp_path):
+    folder = tmp_path / "p"
+    folder.mkdir()
+    tiny_pdf(folder / "s.pdf", STATEMENT)
+    configure(srv, localFolder=str(folder))
+    srv.STORE["collections"]["transactions"]["old"] = {"date": "2023-12-30", "amount": -5.0, "card": "Visa", "source": "pdf"}
+    configure(srv, localFolder=str(folder), fromYear="2024")
+    srv.run_sync()
+    assert "old" not in srv.STORE["collections"]["transactions"]
+    assert "Removed 1 statement transaction outside the years you chose" in "\n".join(lines(srv))

@@ -59,7 +59,7 @@ const cashOnly=a=>S.tx.some(t=>t.cash)?a.filter(t=>t.cash&&(!openDate()||t.date>
 const patchSettings=p=>S.settings?S.db.doc('settings/main').update(p):S.db.doc('settings/main').set(Object.assign({},DEF,p));
 function savePrefs(){try{localStorage.setItem('prefs',JSON.stringify({period:S.period,month:S.month}))}catch(e){}
   if(S.db&&S.settings){const p=S.settings.prefs||{};if(p.period!==S.period||p.month!==S.month)patchSettings({prefs:{period:S.period,month:S.month}}).catch(()=>{})}}
-function currentBalance(){return (+cfg().opening||0)+sum(cashOnly(S.tx),t=>+t.amount||0)}
+function currentBalance(){return (+cfg().opening||(!openDate()&&S.sync&&+S.sync.statementOpening)||0)+sum(cashOnly(S.tx),t=>+t.amount||0)}
 function yearData(y){
   const mtx=S.tx.filter(t=>t.date.startsWith(y));
   const endBal=currentBalance()-sum(cashOnly(S.tx.filter(t=>t.date>y+'-12-31')),t=>+t.amount||0);

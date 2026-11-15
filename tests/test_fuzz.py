@@ -75,3 +75,18 @@ def test_the_api_survives_bad_requests(empty_server):
         status, _ = call(method, path, body)
         assert status < 500, (method, path, status)
     assert call("GET", "/api/data")[0] == 200
+
+
+def test_accounts_sharing_a_label_are_kept_apart_and_opening_balances_add_up_per_cash_account():
+    def e(acct, start, end, opening, closing, cash=True):
+        return {"file": "f", "label": "Oak", "person": "Person A", "state": "ok", "acct": acct, "cash": cash, "start": start, "end": end, "opening": opening, "closing": closing, "count": 1}
+    entries = {"a1": e("1AAAAAAA", "2025-01-01", "2025-01-31", 100.0, 150.0), "a2": e("1AAAAAAA", "2025-02-01", "2025-02-28", 150.0, 175.0),
+               "b1": e("2BBBBBBB", "2025-01-01", "2025-01-31", 5000.0, 5100.0), "b2": e("2BBBBBBB", "2025-02-01", "2025-02-28", 5100.0, 5200.0),
+               "card": e("", "2025-01-01", "2025-01-31", 300.0, 350.0, cash=False)}
+    r = st.audit(entries, "2025-03-01")
+    names = sorted(a["name"] for a in r["accounts"])
+    assert names == ["Oak", "Oak ·AAAA", "Oak ·BBBB"] and not any(i["kind"] == "chain" for a in r["accounts"] for i in a["issues"])     # no false balance jump between two accounts
+    assert st.opening_total(entries) == 5100.0                                  # 100 + 5000: each cash account's earliest opening; the card is not cash
+    assert st.opening_total(entries, 2026) == 0.0
+    entries["bad"] = dict(e("3CCCCCCC", "2025-01-01", "2025-01-31", None, 1.0), state="unverified")
+    assert st.opening_total(entries) == 5100.0

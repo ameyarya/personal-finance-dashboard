@@ -4,6 +4,7 @@ Text comes out of each PDF (pypdf, installed separately), then one parser per st
 rows: {date, desc, amount, card, cash}. Amounts follow the dashboard's convention: negative is money out.
 Nothing here talks to the network or the dashboard's storage; server.py calls parse_pdf() and stores the rows.
 """
+import collections
 import datetime as dt
 import re
 
@@ -331,7 +332,7 @@ def parse_pdf(path, hint=""):
 
 AMT = r"(-?\$?-?[\d,]+\.\d\d)"
 # Bump this whenever a reader changes what it makes of a statement: the next sync then reads every file again.
-READER_VERSION = 4
+READER_VERSION = 5
 
 MONTH_NAMES = "January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec"
 LONG_DATE = r"((?:%s)[a-z]* \d{1,2}, \d{4})" % MONTH_NAMES
@@ -404,12 +405,14 @@ GREEN_DOT = re.compile(r"Statement for the banking services provided by Green Do
 def read_pdf(path, hint=""):
     """(rows, meta) for one statement, or None when no parser recognises it. meta also says kind: 'statement', 'payments' or 'companion'."""
     text = extract_text(path)
+    if GREEN_DOT.search(text):                            # the partner bank's copy of activity the Cash Account statement already lists: nothing to add
+        return [], dict(statement_meta(text), kind="companion")
     rows = parse_text(text, hint)
     if rows is None:
-        if GREEN_DOT.search(text):                        # the partner bank's copy of activity the Cash Account statement already lists: nothing to add
-            return [], dict(statement_meta(text), kind="companion")
         return None
     meta = statement_meta(text)
+    m = re.search(r"ACCOUNT INFORMATION.{0,200}?\b(\dW[0-9A-Z]{6})\b", text) or re.search(r"\b(\dW[0-9A-Z]{6})\b", text) if "Wealthfront" in text else None          # Wealthfront prints an account code; one label can hold several accounts
+    meta["account"] = m.group(1) if m else ""
     meta["kind"] = "payments" if parse_payment_history(text) is not None else "statement"
     if "Wealthfront" in text and "Automated Investing" in text:      # an investment account: its balance moves with the market, so deposits alone can never add up to it
         meta["opening"] = meta["closing"] = None
@@ -437,6 +440,21 @@ def _add_days(d, n):
     return (dt.date.fromisoformat(d) + dt.timedelta(days=n)).isoformat()
 
 
+def opening_total(entries, from_year=None):
+    """What the cash accounts held before their first statement: the sum, over each cash account, of the opening balance printed on its earliest statement
+    (from from_year on, when set). The dashboard adds this to the transactions it holds, so its balance matches the real accounts."""
+    first = {}
+    for e in entries.values():
+        if e.get("state") != "ok" or not e.get("cash") or e.get("opening") is None or not e.get("end"):
+            continue
+        if from_year and int(e["end"][:4]) < from_year:
+            continue
+        key = (e.get("person") or "", e.get("label") or "", e.get("acct") or "")
+        if key not in first or e["end"] < first[key]["end"]:
+            first[key] = e
+    return round(sum(e["opening"] for e in first.values()), 2)
+
+
 def audit(entries, today):
     """What is missing or does not add up. entries: {path: {person, label, file, state, diff, start, end, opening, closing, reason}}.
     Returns {complete, counts, accounts: [{name, person, first, last, cells: [{mo, state}], issues: [...]}], problems: [...]}."""
@@ -448,12 +466,13 @@ def audit(entries, today):
             counts["unreadable"] += 1
             problems.append({"kind": "unreadable", "account": e.get("label", ""), "text": "%s could not be read (%s)." % (e.get("file", "A file"), e.get("reason", "unknown reason"))})
         else:
-            groups.setdefault((e.get("person") or "", re.sub(r"[^a-z0-9]", "", (e.get("label") or "").lower())), []).append(e)      # "CapitalOne" and "Capital One" are one account
+            groups.setdefault((e.get("person") or "", re.sub(r"[^a-z0-9]", "", (e.get("label") or "").lower()), e.get("acct") or ""), []).append(e)      # "CapitalOne" and "Capital One" are one account
     firsts = [min(x["end"] for x in g if x.get("end"))[:7] for g in groups.values() if any(x.get("end") for x in g)]
     earliest = min(firsts) if firsts else ""
     accounts = []
-    for (person, _), g in sorted(groups.items()):
-        label = g[0].get("label") or ""
+    shared = collections.Counter((k[0], k[1]) for k in groups)
+    for (person, _, acct), g in sorted(groups.items()):
+        label = (g[0].get("label") or "") + (" ·" + acct[-4:] if acct and shared[(person, _)] > 1 else "")
         dated = sorted((x for x in g if x.get("end")), key=lambda x: x["end"])
         counts["statements"] += len(g)
         issues, cells = [], {}
