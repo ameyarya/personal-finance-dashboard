@@ -6,6 +6,7 @@ source =
     .
 omit =
     tests/*
+    tools/screenshots.py
     .venv/*
 data_file = .coverage
 
