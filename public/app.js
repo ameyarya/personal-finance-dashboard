@@ -274,7 +274,7 @@ function checkCard(){
     :'<b>Not complete yet.</b> The red months are gaps or figures that do not match. Add the missing statements to the folder and sync again.')+'</span></div>';
   h+='<h3 style="margin:16px 0 6px">'+when+'</h3>';
   h+='<div class="chk-tiles" style="margin:12px 0">'+[['Statements',n('ok')+n('unverified')+n('mismatch')],['Add up',n('ok')],['Not cross-checked',n('unverified')],['Do not add up',n('mismatch')],['Months missing',n('missing')],['Unreadable',c.unreadable]].map(t=>'<div class="tile"><small>'+t[0]+'</small><b>'+t[1]+'</b></div>').join('')+'</div>';
-  h+=accts.length?accts.map(a=>'<div class="chk"><div class="chk-h"><b>'+esc(a.name)+'</b>'+(a.person?' <small>'+esc(a.person)+'</small>':'')+'<small> · '+esc(a.first)+' to '+esc(a.last)+'</small></div><div class="chk-g">'+
+  h+=accts.length?accts.map(a=>'<div class="chk"><div class="chk-h"><b>'+esc(a.name)+'</b>'+(a.person?' <small>'+esc(a.person)+'</small>':'')+(a.cells.length>1?'<small> · '+esc(a.cells[0].mo)+' to '+esc(a.cells[a.cells.length-1].mo)+'</small>':'')+'</div><div class="chk-g">'+
     a.cells.map(x=>'<span class="cell '+x.state+'" title="'+esc(x.mo+': '+(CHK_LABEL[x.state]||x.state))+'" aria-label="'+esc(x.mo+': '+(CHK_LABEL[x.state]||x.state))+'">'+(yr?x.mo.slice(5):mShort(x.mo))+'</span>').join('')+'</div>'+
     a.issues.filter(i=>i.kind==='late').map(i=>'<div class="chk-n">'+esc(i.text)+'</div>').join('')+'</div>').join(''):'<div class="empty">No statements fall in '+when+'.</div>';
   h+='<div class="chk-key"><span class="cell ok">ok</span> adds up <span class="cell unverified">··</span> not cross-checked <span class="cell mismatch">!</span> does not add up <span class="cell missing">–</span> missing</div>';

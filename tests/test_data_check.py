@@ -431,6 +431,9 @@ def test_data_page_follows_the_month_and_year_switch(blank, empty_server, tmp_pa
     blank.click('#period [data-id="year"]')
     expect(blank.locator("#c-check h3")).to_have_text("2026")
     expect(blank.locator("#c-check .chk-g .cell")).to_have_count(3)
+    expect(blank.locator("#c-check .chk-h")).to_contain_text("2026-09 to 2026-11")        # the range shown is the year's, not the account's whole history
+    blank.click('#period [data-id="month"]')
+    expect(blank.locator("#c-check .chk-h")).not_to_contain_text(" to ")
 
 
 def test_a_partner_bank_copy_of_cash_account_activity_is_a_companion_not_an_unreadable_file(tmp_path):
