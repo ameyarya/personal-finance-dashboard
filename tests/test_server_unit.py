@@ -583,3 +583,9 @@ def test_a_bank_accounts_deposit_is_not_mistaken_for_a_withdrawal_of_the_same_si
     card = {"date": "2025-02-01", "desc": "refund", "amount": 20.0, "card": "Visa"}
     srv.STORE["collections"]["transactions"]["c"] = {"date": "2025-02-01", "amount": -20.0, "card": "Visa", "source": "statement"}
     assert server.add_statement_rows([[card]], (None, None))[2] == 1                     # cards keep matching on size alone
+
+
+def test_two_different_withdrawals_from_two_accounts_a_couple_of_days_apart_are_both_kept(srv):
+    row = lambda d, desc: {"date": d, "desc": desc, "amount": -500.0, "card": "Bank", "cash": True}
+    assert server.add_statement_rows([[row("2024-05-22", "transfer a")]], (None, None))[0] == 1
+    assert server.add_statement_rows([[row("2024-05-22", "transfer a"), row("2024-05-24", "transfer b")]], (None, None)) == (1, 0, 1)      # the 24th is new; the 22nd is the same row again

@@ -1,3 +1,6 @@
+/* Fonts are served from this folder: the page makes no request to any other site. Inter and Sora are open fonts (SIL OFL). */
+@font-face{font-family:"Inter";font-style:normal;font-weight:400 600;font-display:swap;src:url(inter.woff2) format("woff2")}
+@font-face{font-family:"Sora";font-style:normal;font-weight:500 600;font-display:swap;src:url(sora.woff2) format("woff2")}
 [hidden]{display:none!important}
 img{max-width:100%}
 /* Layout: one smoked-glass window. Sidebar of pages on the left (a bottom bar on phones), greeting and month on top, cards on a 12-column grid. */

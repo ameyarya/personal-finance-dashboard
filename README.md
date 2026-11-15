@@ -48,7 +48,7 @@ page when you are ready to enter your own.
 - **Accounts.** Where the figures came from, statement sync, backup.
 - **Month / Year.** Every page has a Month / Year switch next to the date arrows.
 
-Light and dark themes. Works on a phone. Ten currencies.
+Light and dark themes. The page loads nothing from other sites (fonts are bundled), so it works offline and tells nobody you are looking at your money. Works on a phone. Ten currencies.
 
 ## Getting your real figures in
 

@@ -59,3 +59,18 @@ def test_sweep_with_example_data(browser, server, width, height):
 def test_sweep_with_no_data(browser, empty_server, width, height):
     found = sweep(browser, empty_server, width, height)
     assert not found, "\n".join(sorted(set(found))[:25])
+
+
+def test_the_page_makes_no_request_to_any_other_site_and_its_fonts_load_from_here(browser, server):
+    context = browser.new_context(reduced_motion="reduce")
+    page = context.new_page()
+    urls = []
+    page.on("request", lambda r: urls.append(r.url))
+    page.goto(server.url + "/")
+    expect(page.locator("#view .card").first).to_be_visible()
+    page.wait_for_timeout(500)
+    outside = [u for u in urls if not u.startswith(server.url) and not u.startswith("data:")]
+    assert not outside, outside
+    assert page.evaluate("document.fonts.check('16px Inter') && document.fonts.check('600 16px Sora')")
+    assert page.evaluate("[...document.fonts].filter(f => f.status === 'loaded').length") >= 1
+    context.close()

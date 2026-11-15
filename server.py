@@ -38,7 +38,7 @@ COLLECTIONS = ("settings", "transactions", "budgets", "recurring", "accounts", "
 ID_RE = re.compile(r"^[A-Za-z0-9_.~:@+-]{1,200}$")
 MAX_BODY = 8 * 1024 * 1024
 MIME = {".png": "image/png", ".ico": "image/svg+xml", ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
-        ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml", ".json": "application/json"}
+        ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml", ".json": "application/json", ".woff2": "font/woff2"}
 
 AUTH = None
 lock = threading.RLock()
@@ -377,12 +377,14 @@ def match_key(card, amount, cash=False):
     return (card, round(float(amount) if cash else abs(float(amount)), 2))
 
 
-def take_match(have, card, amount, date, cash=False):
+def take_match(have, card, amount, date, cash=False, slack=True):
     """If an unmatched existing payment has this card and amount on this date (or within a few days), use it up and say True."""
     dates = have.get(match_key(card, amount, cash), [])
     if date in dates:
         dates.remove(date)
         return True
+    if not slack:
+        return False
     day = dt.date.fromisoformat(date)
     best = None
     for d in dates:
@@ -401,9 +403,9 @@ def add_statement_rows(parsed, window):
     parsed = merge_files(parsed)
     with lock:
         docs = STORE["collections"]["transactions"]
-        have = {}
+        have, have_pdf = {}, {}               # a row read from a PDF before is matched on its exact date; other sources are dated by the bank, a few days off
         for t in docs.values():
-            have.setdefault(match_key(t.get("card", ""), t.get("amount", 0), t.get("cash")), []).append(t.get("date", ""))
+            (have_pdf if t.get("source") == "pdf" else have).setdefault(match_key(t.get("card", ""), t.get("amount", 0), t.get("cash")), []).append(t.get("date", ""))
         added = skipped = dupes = 0
         seen = {}
         unowned = {}
@@ -415,7 +417,7 @@ def add_statement_rows(parsed, window):
             if (lo and year < lo) or (hi and year > hi):
                 skipped += 1
                 continue
-            if take_match(have, r["card"], r["amount"], r["date"], r.get("cash")):
+            if take_match(have_pdf, r["card"], r["amount"], r["date"], r.get("cash"), slack=False) or take_match(have, r["card"], r["amount"], r["date"], r.get("cash")):
                 dupes += 1
                 waiting = unowned.get((r["card"], round(abs(r["amount"]), 2), r["date"]))
                 if r.get("who") and waiting:
@@ -716,7 +718,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self.allowed():
             return self.send_json(403, {"error": "forbidden"})
         parts = self.route()
-        public = parts in (["api", "session"], ["app.css"], ["favicon.svg"], ["favicon.ico"], ["icon-192.png"])
+        public = parts in (["api", "session"], ["app.css"], ["favicon.svg"], ["favicon.ico"], ["icon-192.png"], ["inter.woff2"], ["sora.woff2"])
         if self.locked_out(public):
             return
         if parts == ["api", "session"]:
