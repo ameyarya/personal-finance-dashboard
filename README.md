@@ -17,14 +17,16 @@ sizes (MacBook Air 13" at 1470 x 956 and iPhone 18 Pro at 402 x 874). Regenerate
 `.venv/bin/python tools/screenshots.py`; the script starts a throwaway server on example data and never touches `data/`.
 
 A household money page you run on your own computer and open from any device on your home
-network. One Python file, no dependencies, no accounts, no cloud. Your figures stay in a single
-JSON file on your machine.
+network. A small Python server, no accounts, no cloud. Your figures stay in a single JSON file on
+your machine. The only dependency is `pypdf`, and only if you want it to read statement PDFs.
 
 ```bash
 git clone https://github.com/ameyarya/personal-finance-dashboard.git
 cd personal-finance-dashboard
-python3 server.py
+make run          # or, without make: python3 server.py
 ```
+
+New here? [CONTRIBUTING.md](CONTRIBUTING.md) is the five-minute tour: setup, how the code fits together, how to test.
 
 Open <http://localhost:8770/>. From a phone or another computer on the same Wi-Fi, open
 <http://finances.local:8770/>.
@@ -36,15 +38,15 @@ page when you are ready to enter your own.
 
 - **Overview.** Joint balance, what is safe to spend after bills, and a forecast to the end of
   the month that marks each payday and bill.
-- **Cards.** One card face per card in your statements: tap to flip, spending by month, a monthly limit reminder.
-- **Year view.** Every page has a Month / Year switch next to the date arrows.
-- **Payments.** Add, edit, search, filter, delete with undo, import a bank statement, export.
+- **Cards.** One card face per card in your statements: tap to flip, spending by month.
+- **Transactions.** Add, edit, search, filter, delete with undo, import a bank statement.
 - **Bills.** Regular bills and paydays. Tick them off as they happen.
 - **Budgets.** A monthly limit per category, with a marker for where spending should be today.
-- **Pots.** Savings goals you move money into.
-- **Insights.** Spending by day, needs against wants against savings, categories over six months.
+- **Insights.** Spending by day, needs against wants against savings, categories over time.
 - **Household.** Who spent what.
-- **Accounts.** Which statements the figures came from, statement import, backup.
+- **Data.** Is every statement here, and does each one add up? A month-by-month grid of every account.
+- **Accounts.** Where the figures came from, statement sync, backup.
+- **Month / Year.** Every page has a Month / Year switch next to the date arrows.
 
 Light and dark themes. Works on a phone. Ten currencies.
 
@@ -199,12 +201,11 @@ and tests use invented names and numbers only; real figures live in `data/` and 
 ## Tests
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
-.venv/bin/playwright install chromium     # or set PW_CHANNEL=chrome to use installed Chrome
-.venv/bin/pytest
+make setup        # venv, dependencies, test browser, privacy hooks
+make test         # or: .venv/bin/pytest   (set PW_CHANNEL=chrome to use installed Chrome)
 ```
 
-Over 340 tests: the server, sign-in, statement readers, importer, privacy scanner and the page driven in a browser. The use cases and every flow
+Over 400 tests: the server, sign-in, statement readers, importer, privacy scanner and the page driven in a browser. The use cases and every flow
 they cover are listed in [tests/TEST_CASES.md](tests/TEST_CASES.md). Tests use their own temporary
 data folder and never touch `data/`.
 
@@ -214,15 +215,16 @@ Coverage: `sh tools/coverage.sh` runs everything and reports Python (100%) and t
 ## Layout
 
 ```
-server.py            the whole server: storage, CSV import, static files
-public/index.html    page shell
-public/app.css       styles and both themes
-public/app.js        the app: state, rendering, forms
+server.py            the server: storage, API, folder sync, static files
+statements.py        statement PDF readers, balance checks, the Data page audit
+llm.py               optional local-model fallback (off unless FINANCES_LLM is set)
+auth.py              optional sign-in
+public/              the page: index.html, app.css, app.js (no build step)
 tests/               pytest suites and the test-case catalogue
+tools/               privacy scanner, importer, coverage, screenshots
 deploy/              start-at-login templates
+Makefile             make setup, run, test, coverage, shots
 ```
-
-There is no build step. Edit a file and reload the page.
 
 ## License
 
