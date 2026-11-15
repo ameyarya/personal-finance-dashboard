@@ -533,3 +533,19 @@ def test_run_sync_asks_the_local_model_only_when_the_usual_reader_fails_and_keep
     srv.run_sync(force=True)
     assert srv.STORE["sync"]["ledger"][str(folder / "odd.pdf")]["state"] == "ok"
     assert "the local model read it" in "\n".join(lines(srv))
+
+
+def test_run_sync_reads_everything_again_once_after_the_readers_change(srv, tmp_path, monkeypatch):
+    folder = tmp_path / "p"
+    folder.mkdir()
+    tiny_pdf(folder / "s.pdf", STATEMENT)
+    configure(srv, localFolder=str(folder))
+    srv.run_sync()
+    srv.run_sync()
+    assert "unchanged, skipped" in "\n".join(lines(srv))                      # the second pass skips what it already knows
+    monkeypatch.setattr(server.statements, "READER_VERSION", server.statements.READER_VERSION + 1)
+    srv.run_sync()
+    log = "\n".join(lines(srv))
+    assert "readers have been updated" in log and "unchanged, skipped" not in log
+    srv.run_sync()
+    assert "readers have been updated" not in "\n".join(lines(srv))

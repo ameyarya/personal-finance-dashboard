@@ -330,6 +330,9 @@ def parse_pdf(path, hint=""):
 # ---------------------------------------------------------------- what the statement says about itself
 
 AMT = r"(-?\$?-?[\d,]+\.\d\d)"
+# Bump this whenever a reader changes what it makes of a statement: the next sync then reads every file again.
+READER_VERSION = 4
+
 MONTH_NAMES = "January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec"
 LONG_DATE = r"((?:%s)[a-z]* \d{1,2}, \d{4})" % MONTH_NAMES
 OPENING = re.compile(r"(?:Previous|Beginning|Starting|Opening) Balance(?: on %s)?:? %s" % (LONG_DATE, AMT), re.I)

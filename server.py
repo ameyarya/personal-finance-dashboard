@@ -504,6 +504,9 @@ def run_sync(force=False):
         with lock:
             seen_files = STORE["sync"].setdefault("files", {})
             ledger = STORE["sync"].setdefault("ledger", {})
+            if STORE["sync"].get("readerVersion") != statements.READER_VERSION and not force:
+                force = True
+                slog("The statement readers have been updated, so every statement is read again")
             SYNC.update(phase="Reading statements", done=0, total=len(files))
         slog("Found %d statement PDF%s" % (len(files), "" if len(files) == 1 else "s"))
         parsed, pending = [], {}      # parsed: one list of rows per PDF
@@ -563,6 +566,7 @@ def run_sync(force=False):
         added, skipped, dupes = add_statement_rows(parsed, window)
         with lock:
             seen_files.update(pending)
+            STORE["sync"]["readerVersion"] = statements.READER_VERSION
             here = {str(f) for f in files}
             for gone in [k for k in ledger if k not in here]:          # a statement that was deleted no longer counts
                 del ledger[gone]
