@@ -1,8 +1,20 @@
 # Personal Finance Dashboard
 
-![The overview page, shown with the built-in example figures](docs/screenshot.png)
+![Overview on a MacBook](docs/mac-overview.png)
 
-The screenshot shows the made-up example data that ships with the page, not real accounts.
+<p>
+<img src="docs/phone-overview.png" alt="Overview on an iPhone" width="260">
+<img src="docs/phone-payments.png" alt="Transactions on an iPhone" width="260">
+<img src="docs/phone-insights.png" alt="Insights on an iPhone" width="260">
+</p>
+
+![Transactions on a MacBook](docs/mac-payments.png)
+
+![Insights on a MacBook](docs/mac-insights.png)
+
+The screenshots show the made-up example data that ships with the page, not real accounts. They use real device
+sizes (MacBook Air 13" at 1470 x 956 and iPhone 18 Pro at 402 x 874). Regenerate them with
+`.venv/bin/python tools/screenshots.py`; the script starts a throwaway server on example data and never touches `data/`.
 
 A household money page you run on your own computer and open from any device on your home
 network. One Python file, no dependencies, no accounts, no cloud. Your figures stay in a single

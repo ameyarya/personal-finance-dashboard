@@ -42,7 +42,7 @@ def test_statement_and_credential_files_are_refused_by_name(path):
     assert ps.scan_path(path), path
 
 
-@pytest.mark.parametrize("path", ["public/app.js", "README.md", "tools/rules.example.json", "docs/screenshot.png", "tests/test_ui.py", "requirements.txt"])
+@pytest.mark.parametrize("path", ["public/app.js", "README.md", "tools/rules.example.json", "docs/mac-overview.png", "docs/phone-overview.png", "tests/test_ui.py", "requirements.txt"])
 def test_normal_project_files_pass(path):
     assert not ps.scan_path(path), path
 
