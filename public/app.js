@@ -275,11 +275,27 @@ function checkCard(){
     :'<b>Not complete yet.</b> The red months are gaps or figures that do not match. Add the missing statements to the folder and sync again.'+(stale?' '+plural(stale,'account')+(stale===1?' has':' have')+' no statement from the last two months.':''))+'</span></div>';
   h+='<h3 style="margin:16px 0 6px">'+when+'</h3>';
   h+='<div class="chk-tiles" style="margin:12px 0">'+[['Statements',n('ok')+n('unverified')+n('mismatch')],['Add up',n('ok')],['Not cross-checked',n('unverified')],['Do not add up',n('mismatch')],['Months missing',n('missing')],['Unreadable',c.unreadable]].map(t=>'<div class="tile"><small>'+t[0]+'</small><b>'+t[1]+'</b></div>').join('')+'</div>';
-  h+=accts.length?accts.map(a=>'<div class="chk"><div class="chk-h"><b>'+esc(a.name)+'</b>'+(a.person?' <small>'+esc(a.person)+'</small>':'')+(a.cells.length>1?'<small> · '+esc(a.cells[0].mo)+' to '+esc(a.cells[a.cells.length-1].mo)+'</small>':'')+'</div><div class="chk-g">'+
-    a.cells.map(x=>'<span class="cell '+x.state+'" title="'+esc(x.mo+': '+(CHK_LABEL[x.state]||x.state))+'" aria-label="'+esc(x.mo+': '+(CHK_LABEL[x.state]||x.state))+'">'+(yr?x.mo.slice(5):mShort(x.mo))+'</span>').join('')+'</div>'+
-    a.issues.filter(i=>i.kind==='late').map(i=>'<div class="chk-n">'+esc(i.text)+'</div>').join('')+'</div>').join(''):'<div class="empty">No statements fall in '+when+'.</div>';
+  const people=cfg().members.slice();accts.forEach(a=>{if(a.person&&!people.includes(a.person))people.push(a.person)});if(accts.some(a=>!a.person))people.push('');
+  const acctKey=a=>a.person+'|'+a.name,selA=S.chkSel&&S.chkSel.split('|').slice(0,2).join('|');
+  const detail=(a,x)=>{
+    const dir=k.root?k.root+(x.dest!==undefined?(x.dest?'/'+x.dest:''):''):(x.dest||'');
+    if(x.state==='missing')return '<div class="chk-d chk-drop" data-dir="'+esc(x.dest||'')+'"><b>'+esc(mLong(x.mo)+' '+x.mo.slice(0,4))+' is missing.</b> '+(x.dest!==undefined&&k.root?'Add the PDF here:<code>'+esc(dir)+'</code><label class="btn sm primary">Upload statement<input type="file" class="chk-file" accept="application/pdf,.pdf" data-dir="'+esc(x.dest)+'" hidden></label> <small>or drop the PDF on this box</small>':'There is no other statement for this account to copy the folder from. Put the PDF in the same folder as this account\'s other statements.')+'</div>';
+    const fs=(x.files||[]).map(f=>'<code>'+esc(k.root?k.root+'/'+f:f)+'</code>').join('');
+    return '<div class="chk-d"><b>'+esc(mLong(x.mo)+' '+x.mo.slice(0,4))+':</b> '+esc(CHK_LABEL[x.state]||x.state)+'.'+(fs?'<br>'+fs:'')+'</div>'};
+  const panel=who=>{const mine=accts.filter(a=>a.person===who),cs=mine.flatMap(a=>a.cells),fix=cs.filter(x=>['missing','mismatch','chain'].includes(x.state)).length;
+    return '<section class="chk-p"><div class="chk-ph"><h4>'+esc(who||'Shared and other')+'</h4><small>'+(mine.length?plural(mine.length,'account')+' · '+(fix?'<span class="bad">'+fix+' to fix</span>':'all good'):'')+'</small></div>'+
+    (mine.length?mine.map(a=>'<div class="chk"><div class="chk-h"><b>'+esc(a.name)+'</b>'+(a.cells.length>1?'<small> · '+esc(a.cells[0].mo)+' to '+esc(a.cells[a.cells.length-1].mo)+'</small>':'')+(a.dir&&k.root?'<small class="chk-dir" title="'+esc(k.root+'/'+a.dir)+'"> · '+esc(a.dir)+'</small>':'')+'</div><div class="chk-g">'+
+      a.cells.map(x=>{const t=x.mo+': '+(CHK_LABEL[x.state]||x.state);return '<button class="cell '+x.state+(S.chkSel===acctKey(a)+'|'+x.mo?' sel':'')+'" data-act="chk-pick" data-id="'+esc(acctKey(a)+'|'+x.mo)+'" title="'+esc(t)+'" aria-label="'+esc(t)+'">'+(yr?x.mo.slice(5):mShort(x.mo))+'</button>'}).join('')+'</div>'+
+      (selA===acctKey(a)?a.cells.filter(x=>S.chkSel===acctKey(a)+'|'+x.mo).map(x=>detail(a,x)).join(''):'')+
+      a.issues.filter(i=>i.kind==='late').map(i=>'<div class="chk-n">'+esc(i.text)+'</div>').join('')+'</div>').join(''):'<div class="empty">'+(who?'No statements for '+esc(who)+' in '+when+'.':'None.')+'</div>')+'</section>'};
+  h+=accts.length?'<div class="chk-ps">'+people.filter(w=>w||accts.some(a=>!a.person)).map(panel).join('')+'</div>':'<div class="empty">No statements fall in '+when+'.</div>';
   h+='<div class="chk-key"><span class="cell ok">ok</span> adds up <span class="cell unverified">··</span> not cross-checked <span class="cell mismatch">!</span> does not add up <span class="cell missing">–</span> missing</div>';
   return h;
+}
+async function uploadStatement(file,dir){
+  if(!file)return;if(file.size>5.5*1024*1024){toast('That file is too large (limit 5 MB).');return}
+  try{const data=await new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(String(r.result).split(',')[1]||'');r.onerror=no;r.readAsDataURL(file)});
+    const j=await api('api/statements/upload',{dir:dir,name:file.name,data:data});S.chkSel='';toast('Saved '+j.saved+'. Checking it now.');setTimeout(loadCheck,1500);setTimeout(loadCheck,5000)}catch(e){toast(e.message)}
 }
 async function loadCheck(){
   try{const j=await fetch('api/check',{cache:'no-store'}).then(r=>r.json()),was=JSON.stringify(S.check);S.check=j;S.checkAt=Date.now();
@@ -578,6 +594,7 @@ async function api(path,body){let r;try{r=await fetch(path,{method:'POST',header
 async function pickFolder(){try{const r=await api('api/sync/pick',{});if(r.error){toast(r.error);return ''}return r.path||''}catch(e){toast(e.message);return ''}}
 const col=n=>S.db.collection(n);
 const ACT={
+  'chk-pick'(id){S.chkSel=S.chkSel===id?'':id;render()},
   more(){toggleMore()},
   account(){togglePop('account')},
   'acc-setup'(id){setPasswordForm(id,!(S.session&&S.session.required)&&!((S.session&&S.session.users)||[]).length)},
@@ -652,6 +669,7 @@ document.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('.ro
 document.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target.matches&&e.target.matches('.row.click,.vcard')){e.preventDefault();const a=e.target.dataset.act;if(ACT[a])ACT[a](e.target.dataset.id)}});
 document.addEventListener('input',e=>{if(e.target.id==='lim'){$('lim-out').textContent=+e.target.value?fmt(+e.target.value):'None set'}if(e.target.id==='q'){S.q=e.target.value;S.txMax=100;refreshTx()}});
 document.addEventListener('change',e=>{const t=e.target;
+  if(t.classList&&t.classList.contains('chk-file')){uploadStatement(t.files[0],t.dataset.dir);t.value='';return}
   if(t.id==='cowner'){const meta=Object.assign({},(S.settings&&S.settings.cardMeta)||{});meta[t.dataset.card]=Object.assign({},meta[t.dataset.card],{owner:t.value});save(patchSettings({cardMeta:meta}),'Owner saved');return}
   if(t.id==='lim'){const lim=Object.assign({},(S.settings&&S.settings.cardLimits)||{});lim[t.dataset.card]=+t.value;save(patchSettings({cardLimits:lim}));return}
   if(t.classList&&t.classList.contains('rs')){const tx=S.txRaw.find(x=>x.id===t.dataset.id);if(!tx)return;
@@ -659,6 +677,9 @@ document.addEventListener('change',e=>{const t=e.target;
     if(t.dataset.f==='category'&&t.value==='Income'&&tx.amount<0)p.amount=Math.abs(tx.amount);
     save(col('transactions').doc(tx.id).update(p),t.dataset.f==='who'?'Person saved':'Category saved');return}
   if(t.id==='fcat'){S.fcat=t.value;S.txMax=100;refreshTx()}});
+document.addEventListener('dragover',e=>{if(e.target.closest&&e.target.closest('.chk-drop')){e.preventDefault();e.target.closest('.chk-drop').classList.add('over')}});
+document.addEventListener('dragleave',e=>{const d=e.target.closest&&e.target.closest('.chk-drop');if(d)d.classList.remove('over')});
+document.addEventListener('drop',e=>{const d=e.target.closest&&e.target.closest('.chk-drop');if(!d)return;e.preventDefault();d.classList.remove('over');uploadStatement(e.dataTransfer.files[0],d.dataset.dir)});
 window.addEventListener('hashchange',()=>{const v=hashView();if(v!==S.view){S.view=v;S.anim='page';render()}});
 let rz=0,lastW=0;const redraw=()=>{clearTimeout(rz);rz=setTimeout(()=>{const w=$('view').clientWidth;if(S.ready&&S.view==='overview'&&w!==lastW){lastW=w;drawChart(monthData(curMo()))}},120)};
 window.addEventListener('resize',redraw);if(window.ResizeObserver)new ResizeObserver(redraw).observe($('view'));

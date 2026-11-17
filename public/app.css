@@ -453,4 +453,9 @@ code{font:12px ui-monospace,Menlo,monospace;background:var(--glass2);border-radi
 .cell{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:26px;padding:0 4px;border-radius:7px;font-size:11px;border:1px solid var(--line);background:var(--glass);color:var(--muted)}
 .cell.ok{color:var(--accent);border-color:var(--accent)} .cell.unverified{border-style:dashed} .cell.mismatch,.cell.chain{color:var(--bad);border-color:var(--bad);background:rgba(255,100,80,.12)}
 .cell.missing{color:var(--bad);border:1px dashed var(--bad);background:transparent}
+.chk-ps{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:14px;align-items:start}
+.chk-p{border:1px solid var(--line);border-radius:16px;padding:14px;background:var(--glass)} .chk-ph{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px} .chk-ph h4{margin:0;font-size:15px} .chk-ph small{color:var(--muted)} .chk-ph .bad{color:var(--bad)}
+button.cell{font:inherit;font-size:11px;cursor:pointer} button.cell:hover{border-color:var(--accent)} .cell.sel{outline:2px solid var(--accent);outline-offset:1px} .chk-dir{word-break:break-all}
+.chk-d{margin-top:8px;padding:10px 12px;border-radius:12px;border:1px solid var(--line);font-size:13px;line-height:1.5} .chk-d code{display:block;margin:6px 0;font-size:12px;word-break:break-all;user-select:all} .chk-d label{display:inline-flex;margin-right:8px;cursor:pointer} .chk-d small{color:var(--muted)}
+.chk-drop{border-style:dashed;border-color:var(--bad)} .chk-drop.over{background:color-mix(in srgb,var(--accent) 15%,transparent);border-color:var(--accent)}
 .chk-key{margin-top:14px;color:var(--muted);font-size:12.5px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}

@@ -8,6 +8,7 @@ Everything is stored in one JSON file under ./data. Only devices on the local
 network are answered, and other websites cannot write to it.
 """
 import argparse
+import base64
 import csv
 import datetime as dt
 import hashlib
@@ -757,8 +758,13 @@ class Handler(BaseHTTPRequestHandler):
         if parts == ["api", "check"]:
             with lock:
                 ledger = dict(STORE["sync"].get("ledger") or {})
+            root = (sync_settings().get("localFolder") or "").strip()
+            base = Path(root).expanduser() if root else None
+            prefix = str(base) + "/" if base else "\0"
+            ledger = {path: dict(e, rel=path[len(prefix):] if path.startswith(prefix) else "") for path, e in ledger.items()}
             out = statements.audit(ledger, today().isoformat())
             out["checked"] = bool(ledger)
+            out["root"] = str(base) if base else ""
             return self.send_json(200, out)
         if parts == ["api", "sync", "log"]:
             q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
@@ -851,6 +857,8 @@ class Handler(BaseHTTPRequestHandler):
             if parts == ["api", "sync", "stop"]:
                 stop_sync()
                 return self.send_json(200, {"stopping": True})
+            if parts == ["api", "statements", "upload"]:
+                return self.upload_statement(body)
             if parts == ["api", "sync", "pick"]:
                 return self.send_json(200, pick_folder())
             if parts == ["api", "sync"]:
@@ -865,6 +873,36 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError as e:
             return self.send_json(400, {"error": str(e)})
         self.send_json(404, {"error": "not found"})
+
+    def upload_statement(self, body):
+        """Save a PDF into the statements folder at a place the page chose. Nothing outside that folder can be written, and nothing is overwritten."""
+        root = (sync_settings().get("localFolder") or "").strip()
+        if not root or not Path(root).expanduser().is_dir():
+            return self.send_json(400, {"error": "Choose the statements folder on the Accounts page first."})
+        root = Path(root).expanduser().resolve()
+        rel, name = str(body.get("dir") or "").strip("/"), os.path.basename(str(body.get("name") or ""))
+        if not name.lower().endswith(".pdf") or name.startswith(".") or not re.fullmatch(r"[^\x00-\x1f/\\]{1,150}", name):
+            return self.send_json(400, {"error": "Only PDF files can be added."})
+        try:
+            raw = base64.b64decode(str(body.get("data") or ""), validate=True)
+        except ValueError:
+            return self.send_json(400, {"error": "The file could not be read."})
+        if not raw.startswith(b"%PDF"):
+            return self.send_json(400, {"error": "That does not look like a PDF."})
+        target = (root / rel).resolve() if rel else root
+        if target != root and root not in target.parents:
+            return self.send_json(400, {"error": "That folder is outside the statements folder."})
+        target.mkdir(parents=True, exist_ok=True)
+        dest = target / name
+        n = 1
+        while dest.exists():                                     # never replace a statement that is already there
+            n += 1
+            dest = target / ("%s (%d).pdf" % (name[:-4], n))
+        dest.write_bytes(raw)
+        slog("Added %s" % dest.relative_to(root).as_posix())
+        if not SYNC["running"]:
+            threading.Thread(target=run_sync, daemon=True).start()
+        self.send_json(200, {"saved": dest.relative_to(root).as_posix()})
 
     def batch(self, body):
         writes = body.get("writes")

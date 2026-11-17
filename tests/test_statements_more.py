@@ -257,6 +257,13 @@ def test_discover_without_a_period_or_transactions_header():
     assert st.parse_discover("Discover OPEN TO CLOSE DATE: 03/05/2024 - 04/04/2024 and no table") == []
 
 
+def test_discover_last_twelve_months_export_keeps_a_row_with_an_unlisted_category_apart_from_the_next_rows():
+    rows = st.parse_text("Discover Last 12 Months Summary 12/01/25 12/01/25 ACME CHARGING CA $ 9.42 Automotive 12/10/25 12/10/25 ACME CHARGING CA $ 11.68 Automotive "
+                         "12/22/25 12/22/25 ACME SUBSCRIPTION US $ 9.99 Gadgets and Things")
+    assert [(r["date"], r["desc"], r["amount"]) for r in rows] == [("2025-12-01", "ACME CHARGING CA", -9.42), ("2025-12-10", "ACME CHARGING CA", -11.68),
+                                                                   ("2025-12-22", "ACME SUBSCRIPTION US", -9.99)]
+
+
 def test_discover_last_twelve_months_export():
     rows = st.parse_text(DISCOVER_YEAR)
     assert [(r["date"], r["amount"], r.get("category")) for r in rows] == [("2025-01-18", -47.6, None), ("2025-02-01", 12.97, "Transfer"), ("2025-04-16", -20.0, None)]
@@ -283,3 +290,9 @@ def test_chase_card_with_no_activity_or_no_dates_is_recognised_but_empty():
 
 def test_a_payment_history_report_is_recognised_and_adds_nothing():
     assert st.parse_text("Payment History Report All Payments Date Amount Dec 2, 2024 $3,429.15 Online Completed") == []
+
+
+def test_amex_does_not_read_the_payment_due_date_and_return_address_as_a_charge():
+    text = ("American Express Account Summary New Balance $414.96 Minimum Payment Due $35.00 Payment Due Date 02/16/24 PERSON A 1 MAPLE ST TOWN CA 00000-0000 "
+            "AMERICAN EXPRESS PO BOX 1 CITY CA 00000-0000 Please refer to the section on page 3. 01/05/24 ACME SHOP TOWN CA $12.50")
+    assert [(r["date"], r["amount"]) for r in st.parse_text(text)] == [("2024-01-05", -12.5)]

@@ -179,7 +179,7 @@ def parse_amex(text):
     out = []
     for r in AMEX_ROW.finditer(text):
         desc = r.group(4)
-        if len(desc) < 4 or desc[0] in ",(" or re.search(r"late fee|%|variable|may have|minimum|payment due|(?<!credit )balance|limit|account ending|card ending|customer care|closing date|posting date|indicates", desc, re.I) or not re.search(r"[A-Za-z]{3}", desc):
+        if len(desc) < 4 or desc[0] in ",(" or re.search(r"late fee|%|variable|may have|minimum|payment due|(?<!credit )balance|limit|account ending|card ending|customer care|closing date|posting date|indicates|po box|please refer|debit your|reward dollars|important notices", desc, re.I) or re.search(r"due date\s*$|as of\s*$", text[max(0, r.start() - 40):r.start()], re.I) or not re.search(r"[A-Za-z]{3}", desc):
             continue
         value = money(r.group(5))
         if value == 0:
@@ -243,7 +243,7 @@ def parse_chase_checking(text):
 
 # ---------------------------------------------------------------- Discover, Chase credit cards
 
-DISCOVER_CATEGORIES = r"(?:Services|Merchandise|Restaurants|Supermarkets|Gasoline|Travel/Entertainment|Medical Services|Education|Home Improvement|Government Services|Awards and Rebate Credits|Payments and Credits)"
+DISCOVER_CATEGORIES = r"(?:Automotive|Services|Merchandise|Restaurants|Supermarkets|Gasoline|Travel/Entertainment|Medical Services|Education|Home Improvement|Government Services|Awards and Rebate Credits|Payments and Credits)"
 
 
 DIRECTPAY_NOTE = r"\s*SEE DETAILS OF YOUR NEXT DIRECTPAY BELOW.*$"
@@ -255,7 +255,7 @@ def parse_discover(text):
         return None
     out = []
     if "Last 12 Months Summary" in text:
-        for r in re.finditer(r"(\d\d)/(\d\d)/(\d\d) \d\d/\d\d/\d\d (.+?) \$ (-?%s)(?: %s)?(?= \d\d/\d\d/\d\d \d\d/\d\d/\d\d|$)" % (NUM, DISCOVER_CATEGORIES), text):
+        for r in re.finditer(r"(\d\d)/(\d\d)/(\d\d) \d\d/\d\d/\d\d (.+?) \$ (-?%s)(?: [A-Za-z/][A-Za-z/ ]*?)?(?= \d\d/\d\d/\d\d \d\d/\d\d/\d\d|$)" % NUM, text):
             out.append(row(iso(2000 + int(r.group(3)), int(r.group(1)), int(r.group(2))), re.sub(DIRECTPAY_NOTE, "", r.group(4)), -money(r.group(5)), "Discover"))
         return out
     period = re.search(r"OPEN TO CLOSE DATE: (\d\d)/(\d\d)/(\d{4}) - (\d\d)/(\d\d)/(\d{4})", text)
@@ -332,7 +332,7 @@ def parse_pdf(path, hint=""):
 
 AMT = r"(-?\$?-?[\d,]+\.\d\d)"
 # Bump this whenever a reader changes what it makes of a statement: the next sync then reads every file again.
-READER_VERSION = 5
+READER_VERSION = 7
 
 MONTH_NAMES = "January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec"
 LONG_DATE = r"((?:%s)[a-z]* \d{1,2}, \d{4})" % MONTH_NAMES
@@ -455,6 +455,12 @@ def opening_total(entries, from_year=None):
     return round(sum(e["opening"] for e in first.values()), 2)
 
 
+def dest_dir(ref, mo):
+    """Where a statement for month mo belongs: the folder of a sibling statement, with its year folder swapped for mo's year."""
+    parts = [mo[:4] if re.fullmatch(r"\d{4}", x) else x for x in ref.split("/")[:-1]] if ref else []
+    return "/".join(parts)
+
+
 def audit(entries, today):
     """What is missing or does not add up. entries: {path: {person, label, file, state, diff, start, end, opening, closing, reason}}.
     Returns {complete, counts, accounts: [{name, person, first, last, cells: [{mo, state}], issues: [...]}], problems: [...]}."""
@@ -475,7 +481,8 @@ def audit(entries, today):
         label = (g[0].get("label") or "") + (" ·" + acct[-4:] if acct and shared[(person, _)] > 1 else "")
         dated = sorted((x for x in g if x.get("end")), key=lambda x: x["end"])
         counts["statements"] += len(g)
-        issues, cells = [], {}
+        issues, cells, where = [], {}, {}
+        ref = (dated[-1].get("rel") or "") if dated else ""
         for x in g:
             counts[x["state"]] = counts.get(x["state"], 0) + 1
         for x in g:
@@ -495,6 +502,8 @@ def audit(entries, today):
             mo = x["end"][:7]
             worst = ("mismatch", "unverified", "ok")                        # a month with two statements shows the worse of the two
             cells[mo] = min(filter(None, (cells.get(mo), x["state"])), key=worst.index)
+            if x.get("rel"):
+                where.setdefault(mo, []).append(x["rel"])
         prev = None
         for x in dated:
             if prev:
@@ -524,7 +533,8 @@ def audit(entries, today):
         if dated and earliest and dated[0]["end"][:7] > _add_days(earliest + "-15", 45)[:7]:
             issues.append({"kind": "late", "text": "Statements begin with %s. Anything before that is not in the dashboard." % dated[0]["end"][:7]})
         accounts.append({"name": label, "person": person, "first": min(cells) if cells else "", "last": max(cells) if cells else "",
-                         "cells": [{"mo": mo, "state": cells[mo]} for mo in sorted(cells)], "issues": issues})
+                         "dir": "/".join(ref.split("/")[:-1]),
+                         "cells": [dict({"mo": mo, "state": cells[mo]}, **({"files": where[mo]} if mo in where else {}), **({"dest": dest_dir(ref, mo)} if cells[mo] == "missing" and ref else {})) for mo in sorted(cells)], "issues": issues})
     broken = ("missing", "chain", "mismatch", "stale", "nodate")          # "late" is a note: the account may simply be newer
     complete = bool(accounts) and not counts["unreadable"] and not any(i["kind"] in broken for a in accounts for i in a["issues"])
     return {"complete": complete, "counts": counts, "accounts": accounts, "problems": problems}

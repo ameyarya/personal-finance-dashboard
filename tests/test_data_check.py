@@ -450,3 +450,70 @@ def test_a_wealthfront_investment_statement_is_not_cross_checked_because_the_mar
             "TRANSFERS Date Security Symbol/CUSIP Type Shares Share Price Value 3/5/2025 -- -- Transfer out -- -- -$50.00 Total -$50.00")
     rows, meta = st.read_pdf(tiny_pdf(tmp_path / "wf.pdf", text), "Wealthfront")
     assert meta["opening"] is None and meta["closing"] is None and st.check_statement(rows, meta)[0] == "unverified"
+
+
+# ---------------------------------------------------------------- the folder map and uploading a missing statement
+
+def seed_tree(server, tmp_path, names):
+    """Statements/Person A/<year>/Maple Bank/<month>.pdf, the layout the page maps onto."""
+    folder = tmp_path / "Statements" / "Person A" / "2026" / "Maple Bank"
+    folder.mkdir(parents=True)
+    for name in names:
+        add_month(folder, name)
+    server.call("PUT", "/api/doc/settings/main", {"household": "H", "currency": "USD", "opening": 0, "members": ["Person A", "Person B"], "fiscalYear": 2026,
+                                                  "sync": {"localFolder": str(tmp_path / "Statements"), "auto": False}})
+    return folder
+
+
+def pdf_b64(tmp_path, name, body):
+    import base64
+    tiny_pdf(tmp_path / name, body)
+    return base64.b64encode((tmp_path / name).read_bytes()).decode()
+
+
+def test_check_route_maps_each_month_to_its_file_and_a_missing_month_to_the_folder_it_belongs_in(empty_server, tmp_path):
+    seed_tree(empty_server, tmp_path, ("sep", "nov"))
+    sync_and_wait(empty_server)
+    body = empty_server.call("GET", "/api/check")[1]
+    a = body["accounts"][0]
+    cells = {c["mo"]: c for c in a["cells"]}
+    assert body["root"] == str(tmp_path / "Statements") and a["person"] == "Person A" and a["dir"] == "Person A/2026/Maple Bank"
+    assert cells["2026-09"]["files"] == ["Person A/2026/Maple Bank/sep.pdf"]
+    assert cells["2026-10"]["state"] == "missing" and cells["2026-10"]["dest"] == "Person A/2026/Maple Bank"
+
+
+def test_upload_saves_the_pdf_where_asked_never_overwrites_and_refuses_anything_else(empty_server, tmp_path):
+    seed_tree(empty_server, tmp_path, ("sep", "nov"))
+    good = pdf_b64(tmp_path, "up.pdf", "x")
+    up = lambda **kw: empty_server.call("POST", "/api/statements/upload", dict({"dir": "Person A/2026/Maple Bank", "name": "oct.pdf", "data": good}, **kw))
+    status, body = up()
+    assert status == 200 and body["saved"] == "Person A/2026/Maple Bank/oct.pdf"
+    assert (tmp_path / "Statements" / body["saved"]).read_bytes().startswith(b"%PDF")
+    assert up()[1]["saved"] == "Person A/2026/Maple Bank/oct (2).pdf"                       # the first copy is untouched
+    assert up(dir="Person A/2027/New Bank", name="a.pdf")[1]["saved"] == "Person A/2027/New Bank/a.pdf"      # a new folder is made
+    for bad in (dict(dir="../outside"), dict(dir="Person A/../../outside"), dict(name="notes.txt"), dict(name=".hidden.pdf"), dict(data="bm90IGEgcGRm"), dict(data="***")):
+        assert up(**bad)[0] == 400
+    assert not (tmp_path / "outside").exists()
+    empty_server.call("PUT", "/api/doc/settings/main", {"household": "H", "currency": "USD", "opening": 0, "members": [], "fiscalYear": 2026, "sync": {}})
+    assert up()[0] == 400
+
+
+def test_data_page_has_a_panel_per_person_and_uploading_into_a_missing_month_fills_it(blank, empty_server, tmp_path):
+    pytest.importorskip("pypdf")
+    folder = seed_tree(empty_server, tmp_path, ("sep", "nov"))
+    sync_and_wait(empty_server)
+    blank.reload()
+    go(blank, "check")
+    blank.click('#period [data-id="year"]')
+    expect(blank.locator(".chk-p")).to_have_count(2)
+    expect(blank.locator(".chk-p").first).to_contain_text("Person A")
+    expect(blank.locator(".chk-p").nth(1)).to_contain_text("No statements for Person B")
+    blank.locator(".chk-g .cell.ok").first.click()
+    expect(blank.locator(".chk-d")).to_contain_text("sep.pdf")
+    blank.locator(".chk-g .cell.missing").click()
+    expect(blank.locator(".chk-d")).to_contain_text("is missing")
+    expect(blank.locator(".chk-d code")).to_contain_text("Person A/2026/Maple Bank")
+    add_month(tmp_path, "oct")
+    blank.set_input_files(".chk-file", str(tmp_path / "oct.pdf"))
+    expect(blank.locator(".chk-g .cell.missing")).to_have_count(0, timeout=20000)
+    assert (folder / "oct.pdf").exists()
