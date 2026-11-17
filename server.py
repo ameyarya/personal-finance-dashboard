@@ -472,7 +472,7 @@ def drop_stale_pdf_rows(parsed):
     produced = {}
     for rows in parsed:
         for r in rows:
-            k = match_key(r["card"], r["amount"], r.get("cash")) + (r["date"],)
+            k = (r["card"], round(r["amount"], 2), r["date"])           # signed: a charge that is really a payment must not hide behind it
             produced[k] = produced.get(k, 0) + 1
     with lock:
         docs = STORE["collections"]["transactions"]
@@ -480,9 +480,11 @@ def drop_stale_pdf_rows(parsed):
         for k, t in sorted(docs.items(), key=lambda kv: kv[1].get("date", "")):
             if t.get("source") != "pdf":
                 continue
-            key = match_key(t.get("card", ""), t.get("amount", 0), t.get("cash")) + (t.get("date", ""),)
-            if produced.get(key):
-                produced[key] -= 1
+            key = (t.get("card", ""), round(t.get("amount", 0), 2), t.get("date", ""))
+            flipped = (key[0], -key[1], key[2]) if t.get("category") == "Income" else key         # setting a row to Income flips its sign; that is an edit, not a leftover
+            hit = key if produced.get(key) else flipped if produced.get(flipped) else None
+            if hit:
+                produced[hit] -= 1
             else:
                 gone.append(k)
         for k in gone:

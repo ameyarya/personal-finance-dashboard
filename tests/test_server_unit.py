@@ -609,3 +609,14 @@ def test_a_full_re_read_removes_statement_rows_no_statement_contains_but_keeps_e
     assert "no statement contains any more" in "\n".join(lines(srv))
     srv.run_sync(force=True)
     assert real in docs                                                                  # nothing real is lost on the next pass
+
+
+def test_stale_rows_compare_the_sign_so_a_phantom_charge_cannot_hide_a_real_payment_but_an_income_edit_is_kept(srv):
+    with srv.lock:
+        docs = srv.STORE["collections"]["transactions"]
+        docs.clear()
+        docs["a"] = {"source": "pdf", "card": "Amex", "date": "2024-02-16", "amount": -50.0, "desc": "x", "category": "Other"}      # a leftover charge
+        docs["b"] = {"source": "pdf", "card": "Amex", "date": "2024-03-01", "amount": 20.0, "desc": "y", "category": "Income"}      # edited to Income
+    rows = [{"card": "Amex", "date": "2024-02-16", "amount": 50.0}, {"card": "Amex", "date": "2024-03-01", "amount": -20.0}]
+    assert srv.drop_stale_pdf_rows([rows]) == 1
+    assert list(srv.STORE["collections"]["transactions"]) == ["b"]
